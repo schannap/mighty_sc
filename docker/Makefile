@@ -11,7 +11,6 @@ build-no-cache:
 
 run:
 	xhost + && docker run  -it \
-				--gpus all \
 				--env="NVIDIA_DRIVER_CAPABILITIES=all" \
 				--privileged \
 				-e DISPLAY=${DISPLAY} \
