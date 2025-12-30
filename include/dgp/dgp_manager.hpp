@@ -69,6 +69,7 @@ public:
     void getVecUnknownOccupied(vec_Vec3f& vec_uo);
     void updateVecUnknownOccupied(const vec_Vec3f& vec_uo);
     void insertVecOccupiedToVecUnknownOccupied();
+    std::shared_ptr<const mighty::VoxelMapUtil> getMapUtilForPlanning() const;
 
     std::shared_ptr<mighty::VoxelMapUtil> map_util_;
     std::shared_ptr<mighty::VoxelMapUtil> map_util_for_planning_;

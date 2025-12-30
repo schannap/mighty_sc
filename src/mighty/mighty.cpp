@@ -540,6 +540,95 @@ std::tuple<bool, bool> MIGHTY::replan(double last_replaning_computation_time, do
 
 // ----------------------------------------------------------------------------
 
+// /**
+//  * @brief Replans the trajectory.
+//  * @param double last_replaning_computation_time: Last replanning computation time.
+//  * @param double current_time: Current timestamp.
+//  */
+// std::tuple<bool, bool> MIGHTY::replan_with_map(double last_replaning_computation_time, double current_time, std::shared_ptr<const mighty::VoxelMapUtil> map)
+// {
+
+//   /* -------------------- Housekeeping -------------------- */
+
+//   MyTimer timer_housekeeping(true);
+
+//   // Reset Data
+//   resetData();
+
+//   // Check if we need to replan
+//   if (!checkReadyToReplan())
+//   {
+//     std::cout << bold << red << "Planner is not ready to replan" << reset << std::endl;
+//     return std::make_tuple(false, false);
+//   }
+
+//   // Get states we need
+//   state local_state, local_G_term, last_plan_state;
+//   getState(local_state);
+//   getGterm(local_G_term);
+//   getLastPlanState(last_plan_state);
+
+//   // Check if we need to replan based on the distance to the terminal goal
+//   if (!needReplan(local_state, local_G_term, last_plan_state))
+//     return std::make_tuple(false, false);
+
+//   if (par_.debug_verbose)
+//     std::cout << "Housekeeping: " << timer_housekeeping.getElapsedMicros() / 1000.0 << " ms" << std::endl;
+
+//   /* -------------------- Global Planning -------------------- */
+
+//   MyTimer timer_global(true);
+//   vec_Vecf<3> global_path;
+//   if (!generateGlobalPath(global_path, current_time, last_replaning_computation_time))
+//   {
+//     if (par_.debug_verbose)
+//       std::cout << "Global Planning: " << timer_global.getElapsedMicros() / 1000.0 << " ms" << std::endl;
+//     return std::make_tuple(false, false);
+//   }
+//   if (par_.debug_verbose)
+//     std::cout << "Global Planning: " << timer_global.getElapsedMicros() / 1000.0 << " ms" << std::endl;
+
+//   /* -------------------- Local Trajectory Optimization -------------------- */
+
+//   MyTimer timer_local(true);
+//   if (!planLocalTrajectory(global_path))
+//   {
+//     if (par_.debug_verbose)
+//       std::cout << "Local Trajectory Optimization: " << timer_local.getElapsedMicros() / 1000.0 << " ms" << std::endl;
+//     return std::make_tuple(false, true);
+//   }
+//   if (par_.debug_verbose)
+//     std::cout << "Local Trajectory Optimization: " << timer_local.getElapsedMicros() / 1000.0 << " ms" << std::endl;
+
+//   /* -------------------- Append to Plan -------------------- */
+
+//   MyTimer timer_append(true);
+//   if (!appendToPlan())
+//   {
+//     if (par_.debug_verbose)
+//       std::cout << "Append to Plan: " << timer_append.getElapsedMicros() / 1000.0 << " ms" << std::endl;
+//     return std::make_tuple(false, true);
+//   }
+//   if (par_.debug_verbose)
+//     std::cout << "Append to Plan: " << timer_append.getElapsedMicros() / 1000.0 << " ms" << std::endl;
+
+//   /* -------------------- Final Housekeeping -------------------- */
+
+//   MyTimer timer_final(true);
+
+//   if (par_.debug_verbose)
+//     std::cout << bold << green << "Replanning succeeded" << reset << std::endl;
+
+//   // Reset the replanning failure count
+//   replanning_failure_count_ = 0;
+//   if (par_.debug_verbose)
+//     std::cout << "Final Housekeeping: " << timer_final.getElapsedMicros() / 1000.0 << " ms" << std::endl;
+
+//   return std::make_tuple(true, true);
+// }
+
+// ----------------------------------------------------------------------------
+
 bool MIGHTY::generateGlobalPath(vec_Vecf<3> &global_path, double current_time, double last_replaning_computation_time)
 {
 

@@ -455,3 +455,9 @@ int DGPManager::getTotalNumCells() const
 {
     return map_util_for_planning_->getTotalNumCells();
 }
+
+std::shared_ptr<const mighty::VoxelMapUtil>
+DGPManager::getMapUtilForPlanning() const
+{
+    return map_util_for_planning_;
+}

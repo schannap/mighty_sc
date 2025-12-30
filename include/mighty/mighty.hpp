@@ -83,6 +83,7 @@ public:
   bool checkIfPointFree(const Vec3f &point);
   bool getSafeCorridor(const vec_Vecf<3> &global_path, const state &A);
   std::tuple<bool, bool> replan(double last_replaning_computation_time, double current_time);
+  // std::tuple<bool, bool> replan_with_map(double last_replaning_computation_time, double current_time, std::shared_ptr<const mighty::VoxelMapUtil> map);
   void startAdaptKValue();
   void getGterm(state &G_term);
   void setGterm(const state &G_term);

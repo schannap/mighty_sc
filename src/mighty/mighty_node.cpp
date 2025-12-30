@@ -7,7 +7,6 @@
  * -------------------------------------------------------------------------- */
 
 #include <mighty/mighty_node.hpp>
-
 // ----------------------------------------------------------------------------
 
 /**
@@ -753,6 +752,9 @@ void MIGHTY_NODE::replanCallback()
   setComputationTimesToZero();
 
   // Replan (TODO: clean up)
+  // Test exposing map: 
+  // auto map = mighty_ptr_->dgp_manager_.getMapUtilForPlanning();
+  // auto [replanning_result, dgp_result] = mighty_ptr_->replan_with_map(replanning_computation_time_, current_time, map);
   auto [replanning_result, dgp_result] = mighty_ptr_->replan(replanning_computation_time_, current_time);
 
   // Get computation time (used to find point A) - note this value is not updated in the replan function

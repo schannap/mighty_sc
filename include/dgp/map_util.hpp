@@ -814,6 +814,65 @@ namespace mighty
       return total_size_;
     }
 
+    struct OcclusionInfo
+    {
+      bool is_occlusion = false;
+      Vecf<3> normal = Vecf<3>::Zero();
+      int free_neighbor_count = 0;
+    };
+    OcclusionInfo detectOcclusionAt(
+        const Veci<3>& pt_int,
+        float neighbor_radius,      // meters
+        int min_free_neighbors
+    ) const
+    {
+      OcclusionInfo info;
+
+      // 1. Outside map → not occlusion
+      if (isOutside(pt_int))
+        return info;
+
+      // 2. Must be unknown
+      if (!isUnknown(pt_int))
+        return info;
+
+      // 3. Collect neighbors
+      std::vector<int> neighbor_indices;
+      getNeighborIndices(pt_int, neighbor_indices, neighbor_radius);
+
+      Vecf<3> p_world = intToFloat(pt_int);
+      Vecf<3> normal_sum = Vecf<3>::Zero();
+
+      for (int idx : neighbor_indices)
+      {
+        Veci<3> n_int = indexToVeci3(idx);
+
+        if (isOutside(n_int))
+          continue;
+
+        if (isFree(n_int))
+        {
+          info.free_neighbor_count++;
+
+          Vecf<3> n_world = intToFloat(n_int);
+          normal_sum += (p_world - n_world);  // free → unknown
+        }
+      }
+
+      // 4. Threshold
+      if (info.free_neighbor_count >= min_free_neighbors &&
+          normal_sum.norm() > 1e-6)
+      {
+        info.is_occlusion = true;
+        info.normal = normal_sum.normalized();
+      }
+
+      return info;
+    }
+
+
+
+
     // Map entity
     Tmap map_;
 

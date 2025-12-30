@@ -685,6 +685,14 @@ void SolverLBFGS::initializeSolver(const planner_params_t &params)
     g_ = params.g;
 }
 
+
+// // To expose the map in lbfgs_solver.cpp
+// void SolverLBFGS::setMapUtil(
+//     std::shared_ptr<const mighty::VoxelMapUtil> map)
+// {
+//     map_util_ = std::move(map);
+// }
+
 // -----------------------------------------------------------------------------
 
 // Numerically stable central-difference directional derivative

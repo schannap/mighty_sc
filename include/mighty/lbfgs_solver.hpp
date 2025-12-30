@@ -533,8 +533,11 @@ namespace lbfgs
                                   unsigned seed /*=0*/);
 
         void checkGradCoordinates(const VecXd &z0, int max_coords, double eps, unsigned seed);
-
+        // // For exposing the map in lbfgs_solver.cpp
+        // void setMapUtil(std::shared_ptr<const mighty::VoxelMapUtil> map);
     private:
+        // // For exposing the map in lbfgs_solver.cpp
+        // std::shared_ptr<const mighty::VoxelMapUtil> map_util_;
         /// Find which segment index s contains time t_i
         int findSegment(double ti, const std::vector<double> &T) const;
 
