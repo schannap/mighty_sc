@@ -11,6 +11,8 @@ build-no-cache:
 
 run:
 	xhost + && docker run  -it \
+				-v /home/intent/code/mighty_ws/src/mighty_sc:/home/kkondo/code/mighty_ws/src/mighty \
+				-w /home/kkondo/code/mighty_ws/src/mighty \
 				--env="NVIDIA_DRIVER_CAPABILITIES=all" \
 				--privileged \
 				-e DISPLAY=${DISPLAY} \
