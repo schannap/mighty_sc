@@ -824,7 +824,7 @@ namespace mighty
         const Veci<3>& pt_int,
         float neighbor_radius,      // meters
         int min_free_neighbors
-    ) const
+    ) 
     {
       OcclusionInfo info;
 

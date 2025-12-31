@@ -85,6 +85,15 @@ ament_target_dependencies(convert_vicon_to_state rclcpp example_interfaces dynus
 add_executable(test_lbfgs_solver src/test/test_lbfgs_solver.cpp src/mighty/lbfgs_solver.cpp src/mighty/lbfgs_solver_utils.cpp)
 ament_target_dependencies(test_lbfgs_solver rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs)
 
+# Add the executable for the occlusion detection test file
+# add_executable(test_occlusion_detection src/test/test_occlusion_detection.cpp)
+# ament_target_dependencies(test_occlusion_detection rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs)
+
+add_executable(test_occlusion_detection src/test/test_occlusion_detection.cpp)
+ament_target_dependencies(test_occlusion_detection rclcpp Eigen3 sensor_msgs std_msgs)
+target_link_libraries(test_occlusion_detection OpenMP::OpenMP_CXX ${PCL_LIBRARIES})
+
+
 # Add the convert velodyne executable
 add_executable(convert_velodyne_to_ros_time src/mighty/convert_velodyne_to_ros_time.cpp)
 target_link_libraries(convert_velodyne_to_ros_time)
