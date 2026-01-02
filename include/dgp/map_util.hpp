@@ -872,6 +872,42 @@ namespace mighty
       return info;
     }
 
+    struct traj_occlusion_info
+    {
+      bool is_occlusion = false;
+      Vecf<3> position = Vecf<3>::Zero(); // position associated with occlusion intersection
+      Vecf<3> velocity = Vecf<3>::Zero(); // velocity associated with occlusion intersection
+      Vecf<3> normal = Vecf<3>::Zero();
+
+    };
+
+    std::vector<traj_occlusion_info> trajectoryIntersectsOcclusion(
+      const std::vector<state>& traj, // uses samples of a trajectory
+      float neighbor_radius,
+      int min_free_neighbors
+    ) 
+    {
+      std::vector<traj_occlusion_info> occlusions_in_traj;
+      for (const auto& s : traj)
+      {
+        Veci<3> p_int = floatToInt(s.pos);
+        auto occ = detectOcclusionAt(p_int, neighbor_radius, min_free_neighbors);
+
+        if (occ.is_occlusion)
+        {
+          traj_occlusion_info occ_inst = traj_occlusion_info();
+          occ_inst.is_occlusion = true;
+          occ_inst.position = s.pos;
+          occ_inst.velocity = s.vel; 
+          occ_inst.normal = occ.normal;
+          occlusions_in_traj.push_back(occ_inst);
+        }
+      }
+      // return true if occlusions_in_traj has any entries and false otherwise
+      return occlusions_in_traj;
+    }
+
+
 
 
 

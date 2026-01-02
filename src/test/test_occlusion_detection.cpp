@@ -12,7 +12,9 @@
 #include <vector>
 #include <stdlib.h>
 
-
+// TODO: Make a wrapper ros2 node for this. It should publish visualization for the
+// map and trajectory. 
+// It should also publish visualization for the "direction of occlusion" arrows
 
 class TestableMapUtil : public mighty::MapUtil<3>
 {
@@ -258,6 +260,132 @@ void testExactKFreeNeighborsOcclusion()
   std::cout << "[PASS] Exact-k free neighbors occlusion test\n";
 }
 
+std::vector<state> makeTrajectoryFromPositions(
+  const std::vector<Vecf<3>>& positions,
+  const Vecf<3>& vel = Vecf<3>::Zero()
+)
+{
+  std::vector<state> traj;
+  traj.reserve(positions.size());
+
+  for (const auto& p : positions)
+  {
+    state s;
+    s.pos = p;
+    s.vel = vel;
+    traj.push_back(s);
+  }
+  return traj;
+}
+
+void testTrajectoryNoOcclusion(){
+  // Create a 3d map for testing with dimensions 10 x 10 x 10 and resolution 0.5. All dims go from -5 to 5
+  TestableMapUtil map(
+    0.5, // res
+    -5, 5, // x lims
+    -5, 5, // y lims
+    -5, 5, // z lims
+    0.0   // inflation
+  );
+
+  map.initTestMap(
+    Veci<3>(20, 20, 20),
+    0.5,
+    Vecf<3>(-5, -5, -5)
+  );
+
+  // Make the map entirely free
+  // Mark everything free
+  for (int x = 0; x < 20; ++x)
+    for (int y = 0; y < 20; ++y)
+      for (int z = 0; z < 20; ++z)
+        map.setFree(Veci<3>(x,y,z));
+
+  // Create a sampled trajectory from x = -5 to x = 5
+  std::vector<Vecf<3>> positions;
+  for (float x = -5; x <= 5; x += 0.1f)
+    positions.emplace_back(x, 0, 0);
+
+  auto traj = makeTrajectoryFromPositions(
+    positions, Vecf<3>(1,0,0));
+
+  auto occlusions = map.trajectoryIntersectsOcclusion(
+    traj, // trajectory
+    1.0,  // neighbor radius
+    6     // min free neighbors
+  );
+  // For this example, assert that the list of occlusions the trajectory intersects is empty
+  assert(occlusions.empty());
+  std::cout << "[PASS] Trajectory no occlusion test\n";
+}
+
+void testTrajectoryWithPlanarOcclusion()
+{
+  TestableMapUtil map(
+    0.5,        // resolution
+    -5, 5,
+    -5, 5,
+    -5, 5,
+    0.0
+  );
+
+  map.initTestMap(
+    Veci<3>(20, 20, 20),
+    0.5,
+    Vecf<3>(-5, -5, -5)
+  );
+
+  // Mark free space for x < 0
+  for (int x = 0; x < 10; ++x)        // x < 0
+    for (int y = 0; y < 20; ++y)
+      for (int z = 0; z < 20; ++z)
+        map.setFree(Veci<3>(x, y, z));
+
+  // x >= 0 remains unknown → occlusion boundary at x = 0
+
+  // Trajectory crossing the boundary
+  std::vector<Vecf<3>> positions;
+  for (float x = -2.0f; x <= 2.0f; x += 0.1f)
+    positions.emplace_back(x, 0.0f, 0.0f);
+
+  auto traj = makeTrajectoryFromPositions(
+    positions, Vecf<3>(1, 0, 0));  // moving +x
+
+  auto occlusions = map.trajectoryIntersectsOcclusion(
+    traj,
+    1.0f,  // neighbor radius
+    6      // min free neighbors
+  );
+
+  // ---- Assertions ----
+  assert(!occlusions.empty());
+
+  // At least one occlusion should be near x = 0
+  bool found_near_boundary = false;
+
+  for (const auto& occ : occlusions)
+  {
+    if (std::abs(occ.position.x()) < 0.6f)
+    {
+      found_near_boundary = true;
+
+      // Normal should point roughly +x
+      Vecf<3> nhat = occ.normal.normalized();
+      assert(nhat.dot(Vecf<3>(1, 0, 0)) > 0.9);
+
+      // Velocity should align with +x
+      Vecf<3> vhat = occ.velocity.normalized();
+      assert(vhat.dot(Vecf<3>(1, 0, 0)) > 0.9);
+    }
+  }
+
+  assert(found_near_boundary);
+
+  std::cout << "[PASS] Trajectory planar occlusion test\n";
+}
+
+//TODO: add more tests for detecting occlusions if there are intersections with trajectories
+
 //TODO: Check comment in occlusion detection function in map_util.hpp. Should make the likelihood of being an 
 // occlusion decay with the distance from the query unknown space to the free space.
 
@@ -271,7 +399,8 @@ int main(int argc, char** argv)
   testOcclusionNormalPlanar(); // test occlusion direction
   testOcclusionNormalCorner(); // test occlusion direction
   testExactKFreeNeighborsOcclusion(); // test occlusion detection for exact k free neighbors
-
+  testTrajectoryNoOcclusion(); // test trajectory occlusion detection
+  testTrajectoryWithPlanarOcclusion();
   std::cout << "Test passed." << std::endl;
   return 0;
 }
