@@ -825,6 +825,8 @@ namespace mighty
         float neighbor_radius,      // meters
         int min_free_neighbors
     ) 
+    // TODO: I should check the distance and number of free neighbors, not just number of free neighbors.
+    // Especially because the getNeighborIndices uses a neighbor radius, which should be dependent on res etc.
     {
       OcclusionInfo info;
 
