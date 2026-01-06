@@ -11,6 +11,9 @@
 #include <algorithm>
 #include <vector>
 #include <stdlib.h>
+#include "rclcpp/rclcpp.hpp"
+#include "visualization_msgs/msg/marker.hpp"
+#include "geometry_msgs/msg/point.hpp"
 
 // TODO: Make a wrapper ros2 node for this. It should publish visualization for the
 // map and trajectory. 
@@ -41,366 +44,560 @@ public:
   {
     map_[getIndex(p)] = val_occ_;
   }
+  float getRes() const { return res_; }
+  Vecf<3> getOrigin() const { return origin_d_; }
+  Veci<3> getDim() const { return dim_; }
+  const std::vector<int>& getMapData() const { return map_; }
+  int8_t getValFree() const { return val_free_;}
+  int8_t getValUnknown() const { return val_unknown_;}
+  int8_t getValOcc() const { return val_occ_;}
 };
 
 
-void testFlatBoundaryOcclusion()
-{
-  TestableMapUtil map(
-    /*res=*/0.5,
-    /*x_min=*/0, /*x_max=*/5,
-    /*y_min=*/0, /*y_max=*/5,
-    /*z_min=*/0, /*z_max=*/2,
-    /*inflation=*/0.0
-  );
 
-  map.initTestMap(
-    Veci<3>(10, 10, 3),
-    0.5,
-    Vecf<3>(0, 0, 0)
-  );
-
-  // Mark free region: x < 5
-  for (int x = 0; x < 5; ++x)
-    for (int y = 0; y < 10; ++y)
-      for (int z = 0; z < 3; ++z)
-        map.setFree(Veci<3>(x,y,z));
-
-  Veci<3> p_unknown(5, 5, 1);
-
-  auto occ = map.detectOcclusionAt(p_unknown, 1.0, 6);
-
-  assert(occ.is_occlusion);
-  assert(occ.normal.norm() > 0.9);
-
-  std::cout << "Normal: " << occ.normal.transpose() << std::endl;
-}
-
-void testAllFreeMap()
-{
-  TestableMapUtil map(
-    0.5,   // res
-    -5, 5, // x lims
-    -5, 5, // y lims
-    -5, 5, // z lims
-    0.0   // inflation
-  );
-
-  map.initTestMap(
-    Veci<3>(20, 20, 20),
-    0.5,
-    Vecf<3>(-5, -5, -5)
-  );
-
-  // Mark everything free
-  for (int x = 0; x < 20; ++x)
-    for (int y = 0; y < 20; ++y)
-      for (int z = 0; z < 20; ++z)
-        map.setFree(Veci<3>(x,y,z));
-
-  // Interior point
-  auto occ1 = map.detectOcclusionAt(Veci<3>(10,10,10), 1.0, 6);
-  assert(!occ1.is_occlusion);
-
-  // Boundary point
-  auto occ2 = map.detectOcclusionAt(Veci<3>(0,10,10), 1.0, 6);
-  assert(!occ2.is_occlusion);
-
-  std::cout << "[PASS] All-free map test\n";
-}
-
-void testPartialOcclusion()
-{
-  TestableMapUtil map(
-    0.5, // res
-    -5, 5, // x lims
-    -5, 5, // y lims
-    -5, 5, // z lims
-    0.0   // inflation
-  );
-
-  map.initTestMap(
-    Veci<3>(20, 20, 20),
-    0.5,
-    Vecf<3>(-5, -5, -5)
-  );
-
-  // Let all x >= 0 be unknown
-  // Free half-space x < 0
-  for (int x = 0; x < 10; ++x)
-    for (int y = 0; y < 20; ++y)
-      for (int z = 0; z < 20; ++z)
-        map.setFree(Veci<3>(x,y,z));
-
-  // Case 1: near boundary -> occluded (enough free neighbors)
-  Veci<3> p1(10,10,10);
-  auto occ1 = map.detectOcclusionAt(p1, 1.0, 6);
-  assert(occ1.is_occlusion);
-
-  // Case 2: deep unknown -> not occluded (not enough free neighbors)
-  Veci<3> p2(15,10,10);
-  auto occ2 = map.detectOcclusionAt(p2, 1.0, 6);
-  assert(!occ2.is_occlusion);
-
-  std::cout << "[PASS] Partial occlusion logic test\n";
-}
-
-void testOcclusionNormalPlanar()
-{
-  TestableMapUtil map(
-    0.1, // res
-    -1, 1, // x lims
-    -1, 1, // y lims
-    -1, 1, // z lims
-    0.0   // inflation
-  );
-
-  map.initTestMap(
-    Veci<3>(20, 20, 20),
-    0.1,
-    Vecf<3>(-1, -1, -1)
-  );
-
-  // Let everything x < 0 be free and x >= 0 be unknown
-  // Free x < 0
-  for (int x = 0; x < 10; ++x)
-    for (int y = 0; y < 20; ++y)
-      for (int z = 0; z < 20; ++z)
-        map.setFree(Veci<3>(x,y,z));
-
-  Veci<3> p(11,10,10);  // x ≈ 0.1
-  auto occ = map.detectOcclusionAt(p, 0.3, 6);
-
-  assert(occ.is_occlusion);
-
-  Vecf<3> expected(-1, 0, 0);
-  float cos_angle = occ.normal.normalized().dot(expected);
-  assert(cos_angle > 0.9);
-
-  std::cout << "[PASS] Planar occlusion normal test\n";
-}
-
-
-
-void testOcclusionNormalCorner()
-{
-  TestableMapUtil map(
-    0.1, // res
-    -1, 1, // x lims
-    -1, 1, // y lims
-    -1, 1, // z lims
-    0.0   // inflation
-  );
-
-  map.initTestMap(
-    Veci<3>(20, 20, 20),
-    0.1,
-    Vecf<3>(-1, -1, -1)
-  );
-
-  // Let everything x < 0 AND y < 0 be free and rest unknown
-  // Free x < 0 and y < 0
-  for (int x = 0; x < 10; ++x)
-    for (int y = 0; y < 10; ++y)
-      for (int z = 0; z < 20; ++z)
-        map.setFree(Veci<3>(x,y,z));
-
-  Veci<3> p(10,10,10);  // near (0,0,0)
-  auto occ = map.detectOcclusionAt(p, 0.3, 6);
-
-  assert(occ.is_occlusion);
-
-  Vecf<3> expected(-1, -1, 0);
-  float cos_angle = occ.normal.normalized().dot(expected);
-  assert(cos_angle > 0.9);
-
-  std::cout << "[PASS] Planar occlusion normal test\n";
-}
-
-
-void testExactKFreeNeighborsOcclusion()
-{
-  constexpr int k = 4;
-
-  TestableMapUtil map(
-    0.5, // res
-    -5, 5, // x lims
-    -5, 5, // y lims
-    -5, 5, // z lims
-    0.0   // inflation
-  );
-
-  map.initTestMap(
-    Veci<3>(10, 10, 3),
-    0.5,
-    Vecf<3>(-5, -5, -5)
-  );
-
-  // Query voxel (unknown by default)
-  Veci<3> q(5, 5, 1);
-
-  // Exactly k free neighbors (6-connectivity)
-  std::vector<Veci<3>> free_neighbors = {
-    Veci<3>(4,5,1),
-    Veci<3>(6,5,1),
-    Veci<3>(5,4,1),
-    Veci<3>(5,6,1)
-  };
-
-  for (const auto& p : free_neighbors)
-    map.setFree(p);
-
-  auto occ = map.detectOcclusionAt(q, 1.0, k);
-
-  assert(occ.is_occlusion);
-
-  // Direction should be near zero due to symmetry
-  assert(occ.normal.norm() < 1e-3);
-
-  std::cout << "[PASS] Exact-k free neighbors occlusion test\n";
-}
-
-std::vector<state> makeTrajectoryFromPositions(
-  const std::vector<Vecf<3>>& positions,
-  const Vecf<3>& vel = Vecf<3>::Zero()
-)
-{
-  std::vector<state> traj;
-  traj.reserve(positions.size());
-
-  for (const auto& p : positions)
-  {
-    state s;
-    s.pos = p;
-    s.vel = vel;
-    traj.push_back(s);
-  }
-  return traj;
-}
-
-void testTrajectoryNoOcclusion(){
-  // Create a 3d map for testing with dimensions 10 x 10 x 10 and resolution 0.5. All dims go from -5 to 5
-  TestableMapUtil map(
-    0.5, // res
-    -5, 5, // x lims
-    -5, 5, // y lims
-    -5, 5, // z lims
-    0.0   // inflation
-  );
-
-  map.initTestMap(
-    Veci<3>(20, 20, 20),
-    0.5,
-    Vecf<3>(-5, -5, -5)
-  );
-
-  // Make the map entirely free
-  // Mark everything free
-  for (int x = 0; x < 20; ++x)
-    for (int y = 0; y < 20; ++y)
-      for (int z = 0; z < 20; ++z)
-        map.setFree(Veci<3>(x,y,z));
-
-  // Create a sampled trajectory from x = -5 to x = 5
-  std::vector<Vecf<3>> positions;
-  for (float x = -5; x <= 5; x += 0.1f)
-    positions.emplace_back(x, 0, 0);
-
-  auto traj = makeTrajectoryFromPositions(
-    positions, Vecf<3>(1,0,0));
-
-  auto occlusions = map.trajectoryIntersectsOcclusion(
-    traj, // trajectory
-    1.0,  // neighbor radius
-    6     // min free neighbors
-  );
-  // For this example, assert that the list of occlusions the trajectory intersects is empty
-  assert(occlusions.empty());
-  std::cout << "[PASS] Trajectory no occlusion test\n";
-}
-
-void testTrajectoryWithPlanarOcclusion()
-{
-  TestableMapUtil map(
-    0.5,        // resolution
-    -5, 5,
-    -5, 5,
-    -5, 5,
-    0.0
-  );
-
-  map.initTestMap(
-    Veci<3>(20, 20, 20),
-    0.5,
-    Vecf<3>(-5, -5, -5)
-  );
-
-  // Mark free space for x < 0
-  for (int x = 0; x < 10; ++x)        // x < 0
-    for (int y = 0; y < 20; ++y)
-      for (int z = 0; z < 20; ++z)
-        map.setFree(Veci<3>(x, y, z));
-
-  // x >= 0 remains unknown → occlusion boundary at x = 0
-
-  // Trajectory crossing the boundary
-  std::vector<Vecf<3>> positions;
-  for (float x = -2.0f; x <= 2.0f; x += 0.1f)
-    positions.emplace_back(x, 0.0f, 0.0f);
-
-  auto traj = makeTrajectoryFromPositions(
-    positions, Vecf<3>(1, 0, 0));  // moving +x
-
-  auto occlusions = map.trajectoryIntersectsOcclusion(
-    traj,
-    1.0f,  // neighbor radius
-    6      // min free neighbors
-  );
-
-  // ---- Assertions ----
-  assert(!occlusions.empty());
-
-  // At least one occlusion should be near x = 0
-  bool found_near_boundary = false;
-
-  for (const auto& occ : occlusions)
-  {
-    if (std::abs(occ.position.x()) < 0.6f)
-    {
-      found_near_boundary = true;
-
-      // Normal should point roughly +x
-      Vecf<3> nhat = occ.normal.normalized();
-      assert(nhat.dot(Vecf<3>(1, 0, 0)) > 0.9);
-
-      // Velocity should align with +x
-      Vecf<3> vhat = occ.velocity.normalized();
-      assert(vhat.dot(Vecf<3>(1, 0, 0)) > 0.9);
-    }
-  }
-
-  assert(found_near_boundary);
-
-  std::cout << "[PASS] Trajectory planar occlusion test\n";
-}
 
 //TODO: add more tests for detecting occlusions if there are intersections with trajectories
 
 //TODO: Check comment in occlusion detection function in map_util.hpp. Should make the likelihood of being an 
 // occlusion decay with the distance from the query unknown space to the free space.
 
-int main(int argc, char** argv)
-{
-  std::cout << "Running occlusion detection test..." << std::endl;
 
-  testFlatBoundaryOcclusion(); 
-  testAllFreeMap(); // test occlusion detection
-  testPartialOcclusion(); // test occlusion detection
-  testOcclusionNormalPlanar(); // test occlusion direction
-  testOcclusionNormalCorner(); // test occlusion direction
-  testExactKFreeNeighborsOcclusion(); // test occlusion detection for exact k free neighbors
-  testTrajectoryNoOcclusion(); // test trajectory occlusion detection
-  testTrajectoryWithPlanarOcclusion();
-  std::cout << "Test passed." << std::endl;
+
+class OcclusionVizNode : public rclcpp::Node
+{
+public:
+  OcclusionVizNode() : Node("occlusion_viz_node")
+  {
+    // Create markers to display the map (color dependent on free, unknown or occupied)
+    map_marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("map_marker", 10);
+    // Create markers to display the initial trajectory
+    // traj_marker_pub = this->create_publisher<visualization_msgs::msg::Marker>("traj_marker", 10);
+    // Create markers to display the occlusion norm direction
+    // occ_norm_marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("occ_norm_marker", 10);
+
+    // Create marker to display the velocity vector of a trajectory at an occlusion site
+    // occ_vel_marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("occ_vel_marker", 10);
+    run_tests();
+    
+
+  }
+private:
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr map_marker_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr traj_marker_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr occ_norm_marker_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr occ_vel_marker_pub;
+
+  std::vector<state> traj_;
+  // std::vector<traj_occlusion_info> traj_occlusions_;
+
+  // create a function that takes as input a TestableMapUtil and visualizes it
+  void publishMap(const TestableMapUtil& map)
+  {
+    visualization_msgs::msg::Marker marker;
+    marker.header.frame_id = "map";
+    marker.header.stamp = now();
+    marker.ns = "map";
+    marker.id = 0;
+    marker.type = visualization_msgs::msg::Marker::CUBE_LIST;
+    marker.action = visualization_msgs::msg::Marker::ADD;
+
+    marker.scale.x = map.getRes();
+    marker.scale.y = map.getRes();
+    marker.scale.z = map.getRes();
+
+    marker.pose.orientation.w = 1.0;
+
+    geometry_msgs::msg::Point p;
+
+    for (int x = 0; x < map.getDim()[0]; ++x)
+    {
+      for (int y = 0; y < map.getDim()[1]; ++y)
+      {
+        for (int z = 0; z < map.getDim()[2]; ++z)
+        {
+          Veci<3> idx(x,y,z);
+          int v = map.map_[map.getIndex(idx)];
+
+          const float res = static_cast<float>(map.getRes());
+          Vecf<3> ori = map.getOrigin(); 
+          Vecf<3> res_vec((idx[0]+0.5)*res, (idx[1]+0.5)*res, (idx[2]+0.5)*res);
+          Vecf<3> pos = ori + res_vec;
+          p.x = pos.x();
+          p.y = pos.y();
+          p.z = pos.z();
+          marker.points.push_back(p);
+
+          std_msgs::msg::ColorRGBA c;
+          c.a = 0.8f;
+
+          
+          if (v == map.getValFree())        { c.r = 0.0; c.g = 1.0; c.b = 0.0; }
+          else if (v == map.getValOcc())    { c.r = 1.0; c.g = 0.0; c.b = 0.0; }
+          else                           { c.r = 1.0; c.g = 1.0; c.b = 0.0; }
+
+          marker.colors.push_back(c);
+        }
+      }
+    }
+
+    map_marker_pub_->publish(marker);
+  }
+
+  // // create a function that takes as input a trajectory and visualizes it
+  // void publishTrajectoryAndOcclusions(
+  //   const std::vector<state>& traj,
+  //   const std::vector<traj_occlusion_info>& occlusions
+  // )
+  // {
+  //   // -------- Trajectory --------
+  //   visualization_msgs::msg::Marker traj_marker;
+  //   traj_marker.header.frame_id = "map";
+  //   traj_marker.header.stamp = now();
+  //   traj_marker.ns = "trajectory";
+  //   traj_marker.id = 0;
+  //   traj_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+  //   traj_marker.action = visualization_msgs::msg::Marker::ADD;
+
+  //   traj_marker.scale.x = 0.05;
+  //   traj_marker.color.r = 0.0;
+  //   traj_marker.color.g = 0.0;
+  //   traj_marker.color.b = 1.0;
+  //   traj_marker.color.a = 1.0;
+
+  //   traj_marker.pose.orientation.w = 1.0;
+
+  //   for (const auto& s : traj)
+  //   {
+  //     geometry_msgs::msg::Point p;
+  //     p.x = s.pos.x();
+  //     p.y = s.pos.y();
+  //     p.z = s.pos.z();
+  //     traj_marker.points.push_back(p);
+  //   }
+
+  //   traj_marker_pub_->publish(traj_marker);
+
+  //   // -------- Occlusion normals --------
+  //   visualization_msgs::msg::Marker norm_marker;
+  //   norm_marker.header.frame_id = "map";
+  //   norm_marker.header.stamp = now();
+  //   norm_marker.ns = "occlusion_normals";
+  //   norm_marker.id = 0;
+  //   norm_marker.type = visualization_msgs::msg::Marker::ARROW;
+  //   norm_marker.action = visualization_msgs::msg::Marker::ADD;
+
+  //   norm_marker.scale.x = 0.05;  // shaft diameter
+  //   norm_marker.scale.y = 0.1;   // head diameter
+  //   norm_marker.scale.z = 0.1;   // head length
+
+  //   norm_marker.color.r = 1.0;
+  //   norm_marker.color.g = 0.0;
+  //   norm_marker.color.b = 1.0;
+  //   norm_marker.color.a = 1.0;
+
+  //   norm_marker.pose.orientation.w = 1.0;
+
+  //   // -------- Occlusion velocity arrows --------
+  //   visualization_msgs::msg::Marker vel_marker = norm_marker;
+  //   vel_marker.ns = "occlusion_velocity";
+  //   vel_marker.color.r = 0.0;
+  //   vel_marker.color.g = 1.0;
+  //   vel_marker.color.b = 1.0;
+
+  //   for (const auto& occ : occlusions)
+  //   {
+  //     geometry_msgs::msg::Point p0, p1;
+
+  //     // --- normal arrow ---
+  //     p0.x = occ.position.x();
+  //     p0.y = occ.position.y();
+  //     p0.z = occ.position.z();
+
+  //     Vecf<3> n = occ.normal.normalized();
+  //     p1.x = p0.x + 0.5 * n.x();
+  //     p1.y = p0.y + 0.5 * n.y();
+  //     p1.z = p0.z + 0.5 * n.z();
+
+  //     norm_marker.points.push_back(p0);
+  //     norm_marker.points.push_back(p1);
+
+  //     // --- velocity arrow ---
+  //     Vecf<3> v = occ.velocity.normalized();
+  //     p1.x = p0.x + 0.5 * v.x();
+  //     p1.y = p0.y + 0.5 * v.y();
+  //     p1.z = p0.z + 0.5 * v.z();
+
+  //     vel_marker.points.push_back(p0);
+  //     vel_marker.points.push_back(p1);
+  //   }
+
+  //   occ_norm_marker_pub_->publish(norm_marker);
+  //   // occ_vel_marker_pub_->publish(vel_marker);
+  // }
+
+  // make each test a function within here and call the appropriate publishers? Maybe better this way so that each tests is completely isolated
+  void testFlatBoundaryOcclusion()
+  {
+    TestableMapUtil map(
+      /*res=*/0.5,
+      /*x_min=*/0, /*x_max=*/5,
+      /*y_min=*/0, /*y_max=*/5,
+      /*z_min=*/0, /*z_max=*/2,
+      /*inflation=*/0.0
+    );
+
+    map.initTestMap(
+      Veci<3>(10, 10, 3),
+      0.5,
+      Vecf<3>(0, 0, 0)
+    );
+
+    // Mark free region: x < 5
+    for (int x = 0; x < 5; ++x)
+      for (int y = 0; y < 10; ++y)
+        for (int z = 0; z < 3; ++z)
+          map.setFree(Veci<3>(x,y,z));
+
+    Veci<3> p_unknown(5, 5, 1);
+
+    auto occ = map.detectOcclusionAt(p_unknown, 1.0, 6);
+
+    assert(occ.is_occlusion);
+    assert(occ.normal.norm() > 0.9);
+
+    std::cout << "Normal: " << occ.normal.transpose() << std::endl;
+  }
+
+  void testAllFreeMap()
+  {
+    TestableMapUtil map(
+      0.5,   // res
+      -5, 5, // x lims
+      -5, 5, // y lims
+      -5, 5, // z lims
+      0.0   // inflation
+    );
+
+    map.initTestMap(
+      Veci<3>(20, 20, 20),
+      0.5,
+      Vecf<3>(-5, -5, -5)
+    );
+
+    // Mark everything free
+    for (int x = 0; x < 20; ++x)
+      for (int y = 0; y < 20; ++y)
+        for (int z = 0; z < 20; ++z)
+          map.setFree(Veci<3>(x,y,z));
+
+    publishMap(map);
+    // Interior point
+    auto occ1 = map.detectOcclusionAt(Veci<3>(10,10,10), 1.0, 6);
+    assert(!occ1.is_occlusion);
+
+    // Boundary point
+    auto occ2 = map.detectOcclusionAt(Veci<3>(0,10,10), 1.0, 6);
+    assert(!occ2.is_occlusion);
+
+    std::cout << "[PASS] All-free map test\n";
+  }
+
+  void testPartialOcclusion()
+  {
+    TestableMapUtil map(
+      0.5, // res
+      -5, 5, // x lims
+      -5, 5, // y lims
+      -5, 5, // z lims
+      0.0   // inflation
+    );
+
+    map.initTestMap(
+      Veci<3>(20, 20, 20),
+      0.5,
+      Vecf<3>(-5, -5, -5)
+    );
+
+    // Let all x >= 0 be unknown
+    // Free half-space x < 0
+    for (int x = 0; x < 10; ++x)
+      for (int y = 0; y < 20; ++y)
+        for (int z = 0; z < 20; ++z)
+          map.setFree(Veci<3>(x,y,z));
+
+    // Case 1: near boundary -> occluded (enough free neighbors)
+    Veci<3> p1(10,10,10);
+    auto occ1 = map.detectOcclusionAt(p1, 1.0, 6);
+    assert(occ1.is_occlusion);
+
+    // Case 2: deep unknown -> not occluded (not enough free neighbors)
+    Veci<3> p2(15,10,10);
+    auto occ2 = map.detectOcclusionAt(p2, 1.0, 6);
+    assert(!occ2.is_occlusion);
+
+    std::cout << "[PASS] Partial occlusion logic test\n";
+  }
+
+  void testOcclusionNormalPlanar()
+  {
+    TestableMapUtil map(
+      0.1, // res
+      -1, 1, // x lims
+      -1, 1, // y lims
+      -1, 1, // z lims
+      0.0   // inflation
+    );
+
+    map.initTestMap(
+      Veci<3>(20, 20, 20),
+      0.1,
+      Vecf<3>(-1, -1, -1)
+    );
+
+    // Let everything x < 0 be free and x >= 0 be unknown
+    // Free x < 0
+    for (int x = 0; x < 10; ++x)
+      for (int y = 0; y < 20; ++y)
+        for (int z = 0; z < 20; ++z)
+          map.setFree(Veci<3>(x,y,z));
+
+    Veci<3> p(11,10,10);  // x ≈ 0.1
+    auto occ = map.detectOcclusionAt(p, 0.3, 6);
+
+    assert(occ.is_occlusion);
+
+    Vecf<3> expected(-1, 0, 0);
+    float cos_angle = occ.normal.normalized().dot(expected);
+    assert(cos_angle > 0.9);
+
+    std::cout << "[PASS] Planar occlusion normal test\n";
+  }
+
+
+
+  void testOcclusionNormalCorner()
+  {
+    TestableMapUtil map(
+      0.1, // res
+      -1, 1, // x lims
+      -1, 1, // y lims
+      -1, 1, // z lims
+      0.0   // inflation
+    );
+
+    map.initTestMap(
+      Veci<3>(20, 20, 20),
+      0.1,
+      Vecf<3>(-1, -1, -1)
+    );
+
+    // Let everything x < 0 AND y < 0 be free and rest unknown
+    // Free x < 0 and y < 0
+    for (int x = 0; x < 10; ++x)
+      for (int y = 0; y < 10; ++y)
+        for (int z = 0; z < 20; ++z)
+          map.setFree(Veci<3>(x,y,z));
+
+    Veci<3> p(10,10,10);  // near (0,0,0)
+    auto occ = map.detectOcclusionAt(p, 0.3, 6);
+
+    assert(occ.is_occlusion);
+
+    Vecf<3> expected(-1, -1, 0);
+    float cos_angle = occ.normal.normalized().dot(expected);
+    assert(cos_angle > 0.9);
+
+    std::cout << "[PASS] Planar occlusion normal test\n";
+  }
+
+
+  void testExactKFreeNeighborsOcclusion()
+  {
+    constexpr int k = 4;
+
+    TestableMapUtil map(
+      0.5, // res
+      -5, 5, // x lims
+      -5, 5, // y lims
+      -5, 5, // z lims
+      0.0   // inflation
+    );
+
+    map.initTestMap(
+      Veci<3>(10, 10, 3),
+      0.5,
+      Vecf<3>(-5, -5, -5)
+    );
+
+    // Query voxel (unknown by default)
+    Veci<3> q(5, 5, 1);
+
+    // Exactly k free neighbors (6-connectivity)
+    std::vector<Veci<3>> free_neighbors = {
+      Veci<3>(4,5,1),
+      Veci<3>(6,5,1),
+      Veci<3>(5,4,1),
+      Veci<3>(5,6,1)
+    };
+
+    for (const auto& p : free_neighbors)
+      map.setFree(p);
+
+    auto occ = map.detectOcclusionAt(q, 1.0, k);
+
+    assert(occ.is_occlusion);
+
+    // Direction should be near zero due to symmetry
+    assert(occ.normal.norm() < 1e-3);
+
+    std::cout << "[PASS] Exact-k free neighbors occlusion test\n";
+  }
+
+  std::vector<state> makeTrajectoryFromPositions(
+    const std::vector<Vecf<3>>& positions,
+    const Vecf<3>& vel = Vecf<3>::Zero()
+  )
+  {
+    std::vector<state> traj;
+    traj.reserve(positions.size());
+
+    for (const auto& p : positions)
+    {
+      state s;
+      s.pos = p;
+      s.vel = vel;
+      traj.push_back(s);
+    }
+    return traj;
+  }
+
+  void testTrajectoryNoOcclusion(){
+    // Create a 3d map for testing with dimensions 10 x 10 x 10 and resolution 0.5. All dims go from -5 to 5
+    TestableMapUtil map(
+      0.5, // res
+      -5, 5, // x lims
+      -5, 5, // y lims
+      -5, 5, // z lims
+      0.0   // inflation
+    );
+
+    map.initTestMap(
+      Veci<3>(20, 20, 20),
+      0.5,
+      Vecf<3>(-5, -5, -5)
+    );
+
+    // Make the map entirely free
+    // Mark everything free
+    for (int x = 0; x < 20; ++x)
+      for (int y = 0; y < 20; ++y)
+        for (int z = 0; z < 20; ++z)
+          map.setFree(Veci<3>(x,y,z));
+
+    // Create a sampled trajectory from x = -5 to x = 5
+    std::vector<Vecf<3>> positions;
+    for (float x = -5; x <= 5; x += 0.1f)
+      positions.emplace_back(x, 0, 0);
+
+    auto traj = makeTrajectoryFromPositions(
+      positions, Vecf<3>(1,0,0));
+
+    auto occlusions = map.trajectoryIntersectsOcclusion(
+      traj, // trajectory
+      1.0,  // neighbor radius
+      6     // min free neighbors
+    );
+    // For this example, assert that the list of occlusions the trajectory intersects is empty
+    assert(occlusions.empty());
+    std::cout << "[PASS] Trajectory no occlusion test\n";
+  }
+
+  void testTrajectoryWithPlanarOcclusion()
+  {
+    TestableMapUtil map(
+      0.5,        // resolution
+      -5, 5,
+      -5, 5,
+      -5, 5,
+      0.0
+    );
+
+    map.initTestMap(
+      Veci<3>(20, 20, 20),
+      0.5,
+      Vecf<3>(-5, -5, -5)
+    );
+
+    // Mark free space for x < 0
+    for (int x = 0; x < 10; ++x)        // x < 0
+      for (int y = 0; y < 20; ++y)
+        for (int z = 0; z < 20; ++z)
+          map.setFree(Veci<3>(x, y, z));
+
+    // x >= 0 remains unknown → occlusion boundary at x = 0
+
+    // Trajectory crossing the boundary
+    std::vector<Vecf<3>> positions;
+    for (float x = -2.0f; x <= 2.0f; x += 0.1f)
+      positions.emplace_back(x, 0.0f, 0.0f);
+
+    auto traj = makeTrajectoryFromPositions(
+      positions, Vecf<3>(1, 0, 0));  // moving +x
+
+    auto occlusions = map.trajectoryIntersectsOcclusion(
+      traj,
+      1.0f,  // neighbor radius
+      6      // min free neighbors
+    );
+
+    // ---- Assertions ----
+    assert(!occlusions.empty());
+
+    // At least one occlusion should be near x = 0
+    bool found_near_boundary = false;
+
+    for (const auto& occ : occlusions)
+    {
+      if (std::abs(occ.position.x()) < 0.6f)
+      {
+        found_near_boundary = true;
+
+        // Normal should point roughly +x
+        Vecf<3> nhat = occ.normal.normalized();
+        assert(nhat.dot(Vecf<3>(1, 0, 0)) > 0.9);
+
+        // Velocity should align with +x
+        Vecf<3> vhat = occ.velocity.normalized();
+        assert(vhat.dot(Vecf<3>(1, 0, 0)) > 0.9);
+      }
+    }
+
+    assert(found_near_boundary);
+
+    std::cout << "[PASS] Trajectory planar occlusion test\n";
+  }
+
+  int run_tests()
+  {
+    std::cout << "Running occlusion detection test..." << std::endl;
+
+    testFlatBoundaryOcclusion(); 
+    testAllFreeMap(); // test occlusion detection
+    testPartialOcclusion(); // test occlusion detection
+    testOcclusionNormalPlanar(); // test occlusion direction
+    testOcclusionNormalCorner(); // test occlusion direction
+    testExactKFreeNeighborsOcclusion(); // test occlusion detection for exact k free neighbors
+    testTrajectoryNoOcclusion(); // test trajectory occlusion detection
+    testTrajectoryWithPlanarOcclusion();
+    std::cout << "Test passed." << std::endl;
+    return 0;
+  }
+};
+
+int main(int argc, char * argv[])
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<OcclusionVizNode>());
+  rclcpp::shutdown();
   return 0;
 }
