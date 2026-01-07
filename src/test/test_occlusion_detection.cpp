@@ -10,6 +10,7 @@
 #include <cmath>
 #include <algorithm>
 #include <vector>
+#include <algorithm>
 #include <stdlib.h>
 #include "rclcpp/rclcpp.hpp"
 #include "visualization_msgs/msg/marker.hpp"
@@ -246,7 +247,7 @@ private:
       visualization_msgs::msg::Marker m;
       m.header.frame_id = "map";
       m.header.stamp = now();
-      m.ns = "occlusion_normals";
+      m.ns = "occlusion_velocities";
       m.id = id++;
       m.type = visualization_msgs::msg::Marker::ARROW;
       m.action = visualization_msgs::msg::Marker::ADD;
@@ -279,9 +280,69 @@ private:
       m.color.a = 1.0;
 
       marker_array.markers.push_back(m);
+
     }
 
     occ_vel_marker_pub_->publish(marker_array);
+  }
+  // Find the nearest free voxel center to a query
+  Vecf<3> nearestFreeVoxelCenter(
+    const TestableMapUtil& map,
+    const Vecf<3>& query_pos)
+  {
+    float best_dist2 = std::numeric_limits<float>::infinity();
+    Vecf<3> best_p = Vecf<3>::Zero();
+
+    const float res = map.getRes();
+    const Vecf<3>& origin = map.getOrigin();
+    const Veci<3>& dim = map.getDim();
+
+    for (int x = 0; x < dim[0]; ++x)
+      for (int y = 0; y < dim[1]; ++y)
+        for (int z = 0; z < dim[2]; ++z)
+        {
+          Veci<3> idx(x, y, z);
+          if (map.getMapData()[map.getIndex(idx)] != map.getValFree())
+            continue;
+
+          Vecf<3> p =
+            origin + Vecf<3>(
+              (x + 0.5f) * res,
+              (y + 0.5f) * res,
+              (z + 0.5f) * res);
+
+          float d2 = (p - query_pos).squaredNorm();
+          if (d2 < best_dist2)
+          {
+            best_dist2 = d2;
+            best_p = p;
+          }
+        }
+
+    return best_p;
+  }
+  // Check if a occluded position is within the influence band of a free position
+  // Within the influence band is a necessary condition for being considered an occlusion but
+  // not a sufficient condition
+  bool withinVoxelInfluenceBand(
+    const Vecf<3>& occ_pos,
+    const Vecf<3>& free_pos,
+    float resolution,
+    float neighbor_radius)
+  {
+    const float h = 0.5f * resolution;
+    const float shrink = 2.0f * h; // occ + free half extents
+
+    Vecf<3> delta = (occ_pos - free_pos).cwiseAbs();
+
+    Vecf<3> surface_dist;
+    for (int i = 0; i < 3; ++i)
+      // gets max of delta[i] - shrink and 0.0
+      surface_dist[i] = (delta[i] - shrink > 0.0f)
+                  ? (delta[i] - shrink)
+                  : 0.0f;
+
+    return surface_dist.norm() <= neighbor_radius;
   }
 
   // make each test a function within here and call the appropriate publishers? Maybe better this way so that each tests is completely isolated
@@ -379,7 +440,6 @@ private:
     Veci<3> p1(10,10,10);
     auto occ1 = map.detectOcclusionAt(p1, 1.0, 6);
     assert(occ1.is_occlusion);
-
     // Case 2: deep unknown -> not occluded (not enough free neighbors)
     Veci<3> p2(15,10,10);
     auto occ2 = map.detectOcclusionAt(p2, 1.0, 6);
@@ -636,6 +696,231 @@ private:
 
     std::cout << "[PASS] Trajectory planar occlusion test\n";
   }
+  bool near(const Vecf<3>& p, const Vecf<3>& q, float tol)
+  {
+    return (p - q).norm() < tol;
+  }
+
+  bool nearY(const Vecf<3>& p, float y, float tol)
+  {
+    return std::abs(p.y() - y) < tol;
+  }
+
+  void testTrajectoryMultiplePlanarOcclusions()
+  {
+    TestableMapUtil map(
+      0.5,
+      -5, 5,
+      -5, 5,
+      -5, 5,
+      0.0
+    );
+
+    map.initTestMap(
+      Veci<3>(20, 20, 20),
+      0.5,
+      Vecf<3>(-5, -5, -5)
+    );
+
+    // ----------------------------
+    // Define free space
+    // Free if x < 0 OR y < 2
+    // Unknown otherwise
+    // ----------------------------
+    for (int x = 0; x < 20; ++x)
+      for (int y = 0; y < 20; ++y)
+        for (int z = 0; z < 20; ++z)
+        {
+          float wx = -5.0f + x * 0.5f;
+          float wy = -5.0f + y * 0.5f;
+
+          if (wx < 0.0f || wy < 2.0f)
+            map.setFree(Veci<3>(x, y, z));
+        }
+
+    publishMap(map);
+
+    // ----------------------------
+    // Non-straight trajectory
+    // ----------------------------
+    std::vector<Vecf<3>> positions;
+
+    // Line goes from y = -1, x = -2 to x = 1.5 and then x = 1.5, y = -1.0 to y = 3.5
+    // Segment 1: cross x = 0
+    for (float x = -2.0f; x <= 1.5f; x += 0.1f)
+      positions.emplace_back(x, -1.0f, 0.0f);
+
+    // Segment 2: turn and cross y = 2
+    for (float y = -1.0f; y <= 3.5f; y += 0.1f)
+      positions.emplace_back(1.5f, y, 0.0f);
+
+    auto traj = makeTrajectoryFromPositions(
+      positions,
+      Vecf<3>(1, 0, 0)   // nominal velocity (direction checked locally)
+    );
+
+    publishTrajectory(traj);
+
+    auto occlusions = map.trajectoryIntersectsOcclusion(
+      traj,
+      1.0f,   // neighbor radius
+      6       // min free neighbors
+    );
+
+    publishOcclusionNormals(occlusions);
+    publishOcclusionVels(occlusions);
+
+    // ----------------------------
+    // Assertions
+    // ----------------------------
+    assert(occlusions.size() >= 2);
+
+    bool found_x_plane = false;
+    bool found_y_plane = false;
+
+    for (const auto& occ : occlusions)
+    {
+      // ---- Occlusion near x = 0 ----
+      if (std::abs(occ.position.x()) < 0.6f &&
+          std::abs(occ.position.y() + 1.0f) < 0.6f)
+      {
+        found_x_plane = true;
+
+        Vecf<3> nhat = occ.normal.normalized();
+        assert(nhat.dot(Vecf<3>(1, 0, 0)) > 0.9);
+
+        Vecf<3> vhat = occ.velocity.normalized();
+        assert(vhat.dot(Vecf<3>(1, 0, 0)) > 0.5);
+      }
+
+      // ---- Occlusion near y = 2 ----
+      if (std::abs(occ.position.y() - 2.0f) < 0.6f &&
+          std::abs(occ.position.x() - 1.5f) < 0.6f)
+      {
+        found_y_plane = true;
+
+        Vecf<3> nhat = occ.normal.normalized();
+        assert(nhat.dot(Vecf<3>(0, 1, 0)) > 0.9);
+
+        Vecf<3> vhat = occ.velocity.normalized();
+        assert(vhat.dot(Vecf<3>(0, 1, 0)) > 0.5);
+      }
+    }
+
+    assert(found_x_plane);
+    assert(found_y_plane);
+    for (const auto& occ : occlusions) {
+      std::cout << "Occlusion at: " << occ.position.transpose()
+                << " normal: " << occ.normal.transpose() << std::endl;
+    }
+
+    std::cout << "[PASS] Multi-occlusion non-straight trajectory test\n";
+  }
+
+void testTrajectoryWithSinglePlanarOcclusion_OR_logic()
+  {
+    TestableMapUtil map(
+      0.5,
+      -5, 5,
+      -5, 5,
+      -5, 5,
+      0.0
+    );
+
+    map.initTestMap(
+      Veci<3>(20, 20, 20),
+      0.5,
+      Vecf<3>(-5, -5, -5)
+    );
+
+    // ----------------------------
+    // Define free space
+    // Free if x < 0 OR y < 2
+    // Unknown otherwise
+    // ----------------------------
+    for (int x = 0; x < 20; ++x)
+      for (int y = 0; y < 20; ++y)
+        for (int z = 0; z < 20; ++z)
+        {
+          float wx = -5.0f + x * 0.5f;
+          float wy = -5.0f + y * 0.5f;
+
+          if (wx < 0.0f || wy < 2.0f)
+            map.setFree(Veci<3>(x, y, z));
+        }
+
+
+    // Non-straight trajectory
+    std::vector<Vecf<3>> positions;
+    // Line goes from y = -1, x = -2 to x = 1.5 and then x = 1.5, y = -1.0 to y = 3.5
+    // Segment 1: cross x = 0
+    for (float x = -2.0f; x <= 1.5f; x += 0.1f)
+      positions.emplace_back(x, -1.0f, 0.0f);
+
+    // Segment 2: turn and cross y = 2
+    for (float y = -1.0f; y <= 3.5f; y += 0.1f)
+      positions.emplace_back(1.5f, y, 0.0f);
+
+    auto traj = makeTrajectoryFromPositions(
+      positions,
+      Vecf<3>(1, 0, 0)   // nominal velocity (direction checked locally)
+    );
+
+    auto occlusions = map.trajectoryIntersectsOcclusion(
+      traj,
+      0.5f,
+      6
+    );
+
+    assert(!occlusions.empty());
+
+    // ---- Assertions ----
+    bool found_y_plane = false;
+    bool found_bad_region = false;
+
+    for (const auto& occ : occlusions)
+    {
+      // Must be near y ≈ 2
+      if (nearY(occ.position, 2.0f, 0.6f))
+      {
+        found_y_plane = true;
+
+        Vecf<3> nhat = occ.normal.normalized();
+        assert(nhat.dot(Vecf<3>(0, 1, 0)) > 0.9);
+      }
+
+      // Must NOT be near y ≈ -1
+      if (nearY(occ.position, -1.0f, 0.6f))
+      {
+        found_bad_region = true;
+      }
+    }
+
+    for (const auto& occ : occlusions) {
+      std::cout << "Occlusion at: " << occ.position.transpose()
+                << " normal: " << occ.normal.transpose() << std::endl;
+                for (const auto& occ : occlusions)
+      // Test if the nearest free neighbor is close enough for this to be considered an occlusion
+      {
+        Vecf<3> nearest_free =
+          nearestFreeVoxelCenter(map, occ.position);
+
+        bool valid =
+          withinVoxelInfluenceBand(
+            occ.position,
+            nearest_free,
+            map.getRes(),
+            0.5f); // neighbor radius
+
+        assert(valid && "Occlusion outside expected voxel influence band");
+      }
+
+    }
+    assert(found_y_plane && "Expected occlusion at y ≈ 2 not found");
+    assert(!found_bad_region && "Unexpected occlusion in fully free space");
+
+    std::cout << "[PASS] Single planar occlusion (OR logic) test\n";
+  }
 
   int run_tests()
   {
@@ -648,7 +933,9 @@ private:
     // testOcclusionNormalCorner(); // test occlusion direction
     // testExactKFreeNeighborsOcclusion(); // test occlusion detection for exact k free neighbors
     // testTrajectoryNoOcclusion(); // test trajectory occlusion detection
-    testTrajectoryWithPlanarOcclusion();
+    // testTrajectoryWithPlanarOcclusion();
+    // testTrajectoryMultiplePlanarOcclusions();
+    testTrajectoryWithSinglePlanarOcclusion_OR_logic();
     std::cout << "Test passed." << std::endl;
     return 0;
   }
