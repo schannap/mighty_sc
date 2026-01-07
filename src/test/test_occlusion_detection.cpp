@@ -13,11 +13,12 @@
 #include <stdlib.h>
 #include "rclcpp/rclcpp.hpp"
 #include "visualization_msgs/msg/marker.hpp"
+#include "visualization_msgs/msg/marker_array.hpp"
 #include "geometry_msgs/msg/point.hpp"
 
-// TODO: Make a wrapper ros2 node for this. It should publish visualization for the
-// map and trajectory. 
 // It should also publish visualization for the "direction of occlusion" arrows
+using OcclusionInfo = mighty::MapUtil<3>::OcclusionInfo;
+using traj_occlusion_info = mighty::MapUtil<3>::traj_occlusion_info;
 
 class TestableMapUtil : public mighty::MapUtil<3>
 {
@@ -71,12 +72,12 @@ public:
     // Create markers to display the map (color dependent on free, unknown or occupied)
     map_marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("map_marker", 10);
     // Create markers to display the initial trajectory
-    // traj_marker_pub = this->create_publisher<visualization_msgs::msg::Marker>("traj_marker", 10);
+    traj_marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("traj_marker", 10);
     // Create markers to display the occlusion norm direction
-    // occ_norm_marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("occ_norm_marker", 10);
+    occ_norm_marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("occ_norm_marker", 10);
 
     // Create marker to display the velocity vector of a trajectory at an occlusion site
-    // occ_vel_marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("occ_vel_marker", 10);
+    occ_vel_marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("occ_vel_marker", 10);
     run_tests();
     
 
@@ -84,8 +85,8 @@ public:
 private:
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr map_marker_pub_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr traj_marker_pub_;
-  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr occ_norm_marker_pub_;
-  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr occ_vel_marker_pub;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr occ_norm_marker_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr occ_vel_marker_pub_;
 
   std::vector<state> traj_;
   // std::vector<traj_occlusion_info> traj_occlusions_;
@@ -142,98 +143,146 @@ private:
 
     map_marker_pub_->publish(marker);
   }
+ // create a function that takes as input a trajectory and visualizes it
+  void publishTrajectory(
+    const std::vector<state>& traj
+  )
+  {
+    // -------- Trajectory --------
+    visualization_msgs::msg::Marker traj_marker;
+    traj_marker.header.frame_id = "map";
+    traj_marker.header.stamp = now();
+    traj_marker.ns = "trajectory";
+    traj_marker.id = 0;
+    traj_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    traj_marker.action = visualization_msgs::msg::Marker::ADD;
 
-  // // create a function that takes as input a trajectory and visualizes it
-  // void publishTrajectoryAndOcclusions(
-  //   const std::vector<state>& traj,
-  //   const std::vector<traj_occlusion_info>& occlusions
-  // )
-  // {
-  //   // -------- Trajectory --------
-  //   visualization_msgs::msg::Marker traj_marker;
-  //   traj_marker.header.frame_id = "map";
-  //   traj_marker.header.stamp = now();
-  //   traj_marker.ns = "trajectory";
-  //   traj_marker.id = 0;
-  //   traj_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
-  //   traj_marker.action = visualization_msgs::msg::Marker::ADD;
+    traj_marker.scale.x = 0.05;
+    traj_marker.color.r = 0.0;
+    traj_marker.color.g = 0.0;
+    traj_marker.color.b = 1.0;
+    traj_marker.color.a = 1.0;
 
-  //   traj_marker.scale.x = 0.05;
-  //   traj_marker.color.r = 0.0;
-  //   traj_marker.color.g = 0.0;
-  //   traj_marker.color.b = 1.0;
-  //   traj_marker.color.a = 1.0;
+    traj_marker.pose.orientation.w = 1.0;
 
-  //   traj_marker.pose.orientation.w = 1.0;
+    for (const auto& s : traj)
+    {
+      geometry_msgs::msg::Point p;
+      p.x = s.pos.x();
+      p.y = s.pos.y();
+      p.z = s.pos.z();
+      traj_marker.points.push_back(p);
+    }
 
-  //   for (const auto& s : traj)
-  //   {
-  //     geometry_msgs::msg::Point p;
-  //     p.x = s.pos.x();
-  //     p.y = s.pos.y();
-  //     p.z = s.pos.z();
-  //     traj_marker.points.push_back(p);
-  //   }
+    traj_marker_pub_->publish(traj_marker);
+  }
 
-  //   traj_marker_pub_->publish(traj_marker);
+  void publishOcclusionNormals(
+    const std::vector<traj_occlusion_info>& occlusions)
+  {
+    visualization_msgs::msg::MarkerArray marker_array;
 
-  //   // -------- Occlusion normals --------
-  //   visualization_msgs::msg::Marker norm_marker;
-  //   norm_marker.header.frame_id = "map";
-  //   norm_marker.header.stamp = now();
-  //   norm_marker.ns = "occlusion_normals";
-  //   norm_marker.id = 0;
-  //   norm_marker.type = visualization_msgs::msg::Marker::ARROW;
-  //   norm_marker.action = visualization_msgs::msg::Marker::ADD;
+    int id = 0;
+    const double arrow_length = 0.6;  // meters
 
-  //   norm_marker.scale.x = 0.05;  // shaft diameter
-  //   norm_marker.scale.y = 0.1;   // head diameter
-  //   norm_marker.scale.z = 0.1;   // head length
+    for (const auto& occ : occlusions)
+    {
+      // Skip invalid normals
+      if (occ.normal.norm() < 1e-6)
+        continue;
 
-  //   norm_marker.color.r = 1.0;
-  //   norm_marker.color.g = 0.0;
-  //   norm_marker.color.b = 1.0;
-  //   norm_marker.color.a = 1.0;
+      visualization_msgs::msg::Marker m;
+      m.header.frame_id = "map";
+      m.header.stamp = now();
+      m.ns = "occlusion_normals";
+      m.id = id++;
+      m.type = visualization_msgs::msg::Marker::ARROW;
+      m.action = visualization_msgs::msg::Marker::ADD;
 
-  //   norm_marker.pose.orientation.w = 1.0;
+      // ---- Arrow geometry ----
+      geometry_msgs::msg::Point p0, p1;
 
-  //   // -------- Occlusion velocity arrows --------
-  //   visualization_msgs::msg::Marker vel_marker = norm_marker;
-  //   vel_marker.ns = "occlusion_velocity";
-  //   vel_marker.color.r = 0.0;
-  //   vel_marker.color.g = 1.0;
-  //   vel_marker.color.b = 1.0;
+      p0.x = occ.position.x();
+      p0.y = occ.position.y();
+      p0.z = occ.position.z();
 
-  //   for (const auto& occ : occlusions)
-  //   {
-  //     geometry_msgs::msg::Point p0, p1;
+      Vecf<3> n_hat = occ.normal.normalized();
 
-  //     // --- normal arrow ---
-  //     p0.x = occ.position.x();
-  //     p0.y = occ.position.y();
-  //     p0.z = occ.position.z();
+      p1.x = p0.x + arrow_length * n_hat.x();
+      p1.y = p0.y + arrow_length * n_hat.y();
+      p1.z = p0.z + arrow_length * n_hat.z();
 
-  //     Vecf<3> n = occ.normal.normalized();
-  //     p1.x = p0.x + 0.5 * n.x();
-  //     p1.y = p0.y + 0.5 * n.y();
-  //     p1.z = p0.z + 0.5 * n.z();
+      m.points.push_back(p0);
+      m.points.push_back(p1);
 
-  //     norm_marker.points.push_back(p0);
-  //     norm_marker.points.push_back(p1);
+      // ---- Arrow scale ----
+      m.scale.x = 0.05;  // shaft diameter
+      m.scale.y = 0.10;  // head diameter
+      m.scale.z = 0.15;  // head length
 
-  //     // --- velocity arrow ---
-  //     Vecf<3> v = occ.velocity.normalized();
-  //     p1.x = p0.x + 0.5 * v.x();
-  //     p1.y = p0.y + 0.5 * v.y();
-  //     p1.z = p0.z + 0.5 * v.z();
+      // ---- Color (purple) ----
+      m.color.r = 1.0;
+      m.color.g = 0.0;
+      m.color.b = 1.0;
+      m.color.a = 1.0;
 
-  //     vel_marker.points.push_back(p0);
-  //     vel_marker.points.push_back(p1);
-  //   }
+      marker_array.markers.push_back(m);
+    }
 
-  //   occ_norm_marker_pub_->publish(norm_marker);
-  //   // occ_vel_marker_pub_->publish(vel_marker);
-  // }
+    occ_norm_marker_pub_->publish(marker_array);
+  }
+
+  void publishOcclusionVels(
+    const std::vector<traj_occlusion_info>& occlusions)
+  {
+    visualization_msgs::msg::MarkerArray marker_array;
+
+    int id = 0;
+    const double arrow_length = 0.6;  // meters
+
+    for (const auto& occ : occlusions)
+    {
+
+      visualization_msgs::msg::Marker m;
+      m.header.frame_id = "map";
+      m.header.stamp = now();
+      m.ns = "occlusion_normals";
+      m.id = id++;
+      m.type = visualization_msgs::msg::Marker::ARROW;
+      m.action = visualization_msgs::msg::Marker::ADD;
+
+      // ---- Arrow geometry ----
+      geometry_msgs::msg::Point p0, p1;
+
+      p0.x = occ.position.x();
+      p0.y = occ.position.y();
+      p0.z = occ.position.z();
+
+      Vecf<3> v_hat = occ.velocity.normalized();
+
+      p1.x = p0.x + arrow_length * v_hat.x();
+      p1.y = p0.y + arrow_length * v_hat.y();
+      p1.z = p0.z + arrow_length * v_hat.z();
+
+      m.points.push_back(p0);
+      m.points.push_back(p1);
+
+      // ---- Arrow scale ----
+      m.scale.x = 0.05;  // shaft diameter
+      m.scale.y = 0.10;  // head diameter
+      m.scale.z = 0.15;  // head length
+
+      // ---- Color ----
+      m.color.r = 0.0;
+      m.color.g = 1.0;
+      m.color.b = 1.0;
+      m.color.a = 1.0;
+
+      marker_array.markers.push_back(m);
+    }
+
+    occ_vel_marker_pub_->publish(marker_array);
+  }
 
   // make each test a function within here and call the appropriate publishers? Maybe better this way so that each tests is completely isolated
   void testFlatBoundaryOcclusion()
@@ -325,6 +374,7 @@ private:
         for (int z = 0; z < 20; ++z)
           map.setFree(Veci<3>(x,y,z));
 
+    publishMap(map);
     // Case 1: near boundary -> occluded (enough free neighbors)
     Veci<3> p1(10,10,10);
     auto occ1 = map.detectOcclusionAt(p1, 1.0, 6);
@@ -361,6 +411,7 @@ private:
         for (int z = 0; z < 20; ++z)
           map.setFree(Veci<3>(x,y,z));
 
+    publishMap(map);
     Veci<3> p(11,10,10);  // x ≈ 0.1
     auto occ = map.detectOcclusionAt(p, 0.3, 6);
 
@@ -398,6 +449,7 @@ private:
         for (int z = 0; z < 20; ++z)
           map.setFree(Veci<3>(x,y,z));
 
+    publishMap(map);
     Veci<3> p(10,10,10);  // near (0,0,0)
     auto occ = map.detectOcclusionAt(p, 0.3, 6);
 
@@ -429,6 +481,7 @@ private:
       Vecf<3>(-5, -5, -5)
     );
 
+    publishMap(map);
     // Query voxel (unknown by default)
     Veci<3> q(5, 5, 1);
 
@@ -494,6 +547,7 @@ private:
         for (int z = 0; z < 20; ++z)
           map.setFree(Veci<3>(x,y,z));
 
+    publishMap(map);
     // Create a sampled trajectory from x = -5 to x = 5
     std::vector<Vecf<3>> positions;
     for (float x = -5; x <= 5; x += 0.1f)
@@ -502,11 +556,15 @@ private:
     auto traj = makeTrajectoryFromPositions(
       positions, Vecf<3>(1,0,0));
 
+    publishTrajectory(traj);
+
     auto occlusions = map.trajectoryIntersectsOcclusion(
       traj, // trajectory
       1.0,  // neighbor radius
       6     // min free neighbors
     );
+
+    publishOcclusionNormals(occlusions);
     // For this example, assert that the list of occlusions the trajectory intersects is empty
     assert(occlusions.empty());
     std::cout << "[PASS] Trajectory no occlusion test\n";
@@ -534,8 +592,8 @@ private:
         for (int z = 0; z < 20; ++z)
           map.setFree(Veci<3>(x, y, z));
 
-    // x >= 0 remains unknown → occlusion boundary at x = 0
-
+    // x >= 0 remains unknown -> occlusion boundary at x = 0
+    publishMap(map);
     // Trajectory crossing the boundary
     std::vector<Vecf<3>> positions;
     for (float x = -2.0f; x <= 2.0f; x += 0.1f)
@@ -544,6 +602,7 @@ private:
     auto traj = makeTrajectoryFromPositions(
       positions, Vecf<3>(1, 0, 0));  // moving +x
 
+    publishTrajectory(traj);
     auto occlusions = map.trajectoryIntersectsOcclusion(
       traj,
       1.0f,  // neighbor radius
@@ -552,7 +611,8 @@ private:
 
     // ---- Assertions ----
     assert(!occlusions.empty());
-
+    publishOcclusionNormals(occlusions);
+    publishOcclusionVels(occlusions);
     // At least one occlusion should be near x = 0
     bool found_near_boundary = false;
 
@@ -581,13 +641,13 @@ private:
   {
     std::cout << "Running occlusion detection test..." << std::endl;
 
-    testFlatBoundaryOcclusion(); 
-    testAllFreeMap(); // test occlusion detection
-    testPartialOcclusion(); // test occlusion detection
-    testOcclusionNormalPlanar(); // test occlusion direction
-    testOcclusionNormalCorner(); // test occlusion direction
-    testExactKFreeNeighborsOcclusion(); // test occlusion detection for exact k free neighbors
-    testTrajectoryNoOcclusion(); // test trajectory occlusion detection
+    // testFlatBoundaryOcclusion(); 
+    // testAllFreeMap(); // test occlusion detection
+    // testPartialOcclusion(); // test occlusion detection
+    // testOcclusionNormalPlanar(); // test occlusion direction
+    // testOcclusionNormalCorner(); // test occlusion direction
+    // testExactKFreeNeighborsOcclusion(); // test occlusion detection for exact k free neighbors
+    // testTrajectoryNoOcclusion(); // test trajectory occlusion detection
     testTrajectoryWithPlanarOcclusion();
     std::cout << "Test passed." << std::endl;
     return 0;
