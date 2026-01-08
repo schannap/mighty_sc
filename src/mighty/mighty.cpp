@@ -833,6 +833,9 @@ bool MIGHTY::generateLocalTrajectory(const state &local_A, double A_time,
   if (par_.debug_verbose)
     std::cout << "Preparing solver for replan" << std::endl;
 
+  // Create reference to map_util_for_planning_
+  whole_traj_solver_ptr_->setMapUtil(dgp_manager_.map_util_for_planning_.get());
+
   std::vector<std::shared_ptr<dynTraj>> local_trajs;
   getTrajs(local_trajs);
 

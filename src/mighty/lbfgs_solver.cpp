@@ -9,7 +9,7 @@
 #include <mighty/lbfgs_solver.hpp>
 #include <chrono>
 #include <random>
-
+#include <dgp/map_util.hpp>
 using namespace lbfgs;
 
 // H-polyhedron: rows are [n_x n_y n_z d] meaning n^T x <= d
@@ -685,13 +685,6 @@ void SolverLBFGS::initializeSolver(const planner_params_t &params)
     g_ = params.g;
 }
 
-
-// // To expose the map in lbfgs_solver.cpp
-// void SolverLBFGS::setMapUtil(
-//     std::shared_ptr<const mighty::VoxelMapUtil> map)
-// {
-//     map_util_ = std::move(map);
-// }
 
 // -----------------------------------------------------------------------------
 
@@ -1833,6 +1826,191 @@ inline void sampleRobotPositionsUniform(
 // -----------------------------------------------------------------------------
 
 double SolverLBFGS::evaluateObjective(const VecXd &z) const
+{
+    // Reconstruct
+    std::vector<Vec3> P, V, A;
+    std::vector<std::array<Vec3, 6>> CP;
+    std::vector<double> T;
+    reconstruct(z, P, V, A, CP, T);
+    const int M = static_cast<int>(T.size());
+    if (M == 0)
+        return 0.0;
+
+    // ---- 1) time ----
+    double J_time = 0.0;
+    for (double Ts : T)
+        J_time += Ts;
+
+    // ---- 2) jerk (closed form per segment) ----
+    double J_jerk = 0.0;
+    for (int s = 0; s < M; ++s)
+    {
+        const double Ts = T[s];
+        const double C = 3600.0 / std::pow(Ts, 5);
+        const Vec3 d30 = CP[s][3] - 3.0 * CP[s][2] + 3.0 * CP[s][1] - CP[s][0];
+        const Vec3 d31 = CP[s][4] - 3.0 * CP[s][3] + 3.0 * CP[s][2] - CP[s][1];
+        const Vec3 d32 = CP[s][5] - 3.0 * CP[s][4] + 3.0 * CP[s][3] - CP[s][2];
+        J_jerk += C * (d30.squaredNorm() + d31.squaredNorm() + d32.squaredNorm());
+    }
+
+    // ---- 3) sampled terms in s ∈ [0,1] with dt = T_s / kappa (trapezoid) ----
+    const int kappa = (integral_resolution_ > 0 ? integral_resolution_ : 30);
+    if (kappa <= 0)
+        return time_weight_ * J_time + jerk_weight_ * J_jerk;
+
+    const double mu = (hinge_mu_ > 0.0 ? hinge_mu_ : 1e-2);
+    const double Vmax2 = V_max_ * V_max_;
+    const double Amax2 = A_max_ * A_max_;
+    const double Jmax2 = J_max_ * J_max_;
+    const double Om2 = omege_max_ * omege_max_;
+    const double cos_tilt_max = std::cos(tilt_max_rad_);
+    const double m = mass_;
+    const double g = g_;
+    const double eps = 1e-12;
+    const Vec3 e3(0.0, 0.0, 1.0);
+
+    // GCOPTER thrust ring parameters
+    const double f_mean = 0.5 * (f_min_ + f_max_);
+    const double f_radi = 0.5 * std::abs(f_max_ - f_min_);
+    const double f_radi2 = f_radi * f_radi;
+
+    // new accumulators
+    double J_stat = 0.0, J_vel = 0.0, J_acc = 0.0, J_jmax = 0.0, J_om = 0.0, J_tilt = 0.0, J_thr = 0.0, J_dyn = 0.0;
+
+    for (int s = 0; s < M; ++s)
+    {
+        const double Ts = T[s];
+        const double dt = Ts / static_cast<double>(kappa);
+
+        // Precompute finite differences of CP (Bezier derivatives in s-space)
+        Vec3 D1[5], D2[4], D3[3];
+        for (int j = 0; j < 5; ++j)
+            D1[j] = CP[s][j + 1] - CP[s][j];
+        for (int j = 0; j < 4; ++j)
+            D2[j] = CP[s][j + 2] - 2.0 * CP[s][j + 1] + CP[s][j];
+        for (int j = 0; j < 3; ++j)
+            D3[j] = CP[s][j + 3] - 3.0 * CP[s][j + 2] + 3.0 * CP[s][j + 1] - CP[s][j];
+
+        // Static corridor planes (can be empty)
+        const auto &Aseg = A_stat_[s]; // (H x 3)
+        const auto &bseg = b_stat_[s]; // (H)
+        const bool has_planes = (Aseg.rows() > 0);
+
+        for (int j = 0; j <= kappa; ++j)
+        {
+            const double wj = (j == 0 || j == kappa) ? 0.5 : 1.0;
+            const double tau = static_cast<double>(j) / static_cast<double>(kappa);
+
+            double B5[6], B4[5], B3b[4], B2[3];
+            bernstein5(tau, B5);
+            bernstein4(tau, B4);
+            bernstein3(tau, B3b);
+            bernstein2(tau, B2);
+
+            // x(s), dx/ds, d2x/ds2, d3x/ds3
+            Vec3 x = Vec3::Zero(), dxs = Vec3::Zero(), d2s = Vec3::Zero(), d3s = Vec3::Zero();
+            for (int k = 0; k < 6; ++k)
+                x += B5[k] * CP[s][k];
+            for (int k = 0; k < 5; ++k)
+                dxs += B4[k] * D1[k];
+            for (int k = 0; k < 4; ++k)
+                d2s += B3b[k] * D2[k];
+            for (int k = 0; k < 3; ++k)
+                d3s += B2[k] * D3[k];
+
+            // convert to t-derivatives: v = (5/T)*dxs, a = (20/T^2)*d2s, j = (60/T^3)*d3s
+            const double invT = 1.0 / (Ts + 1e-16);
+            const Vec3 v = (5.0 * invT) * dxs;
+            const Vec3 a = (20.0 * invT * invT) * d2s;
+            const Vec3 jrk = (60.0 * invT * invT * invT) * d3s;
+
+            const double wseg = wj * dt;
+
+            // Constraints are: Ax < b (Ax - b < 0)
+            // With margin Co_, we penalize: Ax - b + Co_ < 0 -> violation = Co_ + (Ax - b)
+            if (has_planes)
+            {
+                for (int h = 0; h < Aseg.rows(); ++h)
+                {
+                    const double gval = Aseg.row(h).dot(x) - bseg[h];
+                    const double viol = gval + Co_;         // <-- key: use Co_
+                    J_stat += smoothed_l1(viol, mu) * wseg; // smoothed_l1 zeros negatives
+                }
+            }
+
+            // --- Velocity: y = ||v||^2 - Vmax^2
+            const double yv = v.squaredNorm() - Vmax2;
+            J_vel += smoothed_l1(yv, mu) * wseg;
+
+            // --- Acceleration: y = ||a||^2 - Amax^2
+            const double ya = a.squaredNorm() - Amax2;
+            J_acc += smoothed_l1(ya, mu) * wseg;
+
+            // --- jerk max: y = ||j||^2 - Jmax^2 ---
+            const double yj = jrk.squaredNorm() - Jmax2;
+            J_jmax += smoothed_l1(yj, mu) * wseg; // add hinge only
+
+            // --- Body-rate from (a, j) with yaẇ=0
+            const Vec3 n = a + g * e3;
+            const double r = n.norm() + eps; // match Python placement of eps
+            const Vec3 b3 = n / r;
+            const Eigen::Matrix3d P = Eigen::Matrix3d::Identity() - b3 * b3.transpose();
+            const Vec3 b3dot = (P * jrk) / r;
+            const double yom = b3dot.squaredNorm() - Om2;
+            J_om += smoothed_l1(yom, mu) * wseg;
+
+            // --- Tilt: y = cosθ_max - cosθ, cosθ = e3·b3
+            const double cos_t = b3.z();
+            const double yt = cos_tilt_max - cos_t;
+            J_tilt += smoothed_l1(yt, mu) * wseg;
+
+            // --- Thrust ring (GCOPTER): y = ((f - f_mean)^2 - f_radi^2)
+            const double f = m * r;
+            const double df = f - f_mean;
+            const double yth = df * df - f_radi2;
+            J_thr += smoothed_l1(yth, mu) * wseg;
+        }
+    }
+
+    // --- 4) dynamic‐obstacle cost with uniform time sampling (right Riemann)
+    //    times: [t0+dt, t0+2dt, ..., t0+N*dt],   dt = total_T / N
+    // if (dyn_weight_ > 0.0 && !obstacles_.empty())
+    // {
+    //     int N = (num_dyn_obst_samples_ > 0 ? num_dyn_obst_samples_ : 10); // set this member or replace as needed
+    //     N = std::max(N, 1);
+    //     std::vector<double> t_samples;
+    //     std::vector<Vec3> p_samples;
+    //     sampleRobotPositionsUniform(CP, T, t0_, N, t_samples, p_samples);
+
+    //     const double total_T = t_abs_.back() - t0_;
+    //     const double dt = total_T / N;
+
+    //     for (const auto &obs : obstacles_)
+    //     {
+    //         for (int i = 0; i < N; ++i)
+    //         {
+    //             const double t = t_samples[i];
+    //             const Vec3 &pi = p_samples[i];
+    //             const Vec3 ki = obs->eval(t);
+
+    //             const Vec3 diff = pi - ki;
+    //             const double d2 = diff.squaredNorm();
+    //             const double viol = Cw2_ - d2;
+
+    //             // std::cout << "t: " << t << ", pos: " << pi.transpose() << ", obs: " << ki.transpose() << ", d2: " << d2 << ", viol: " << viol << std::endl;
+
+    //             if (viol > 0.0)
+    //                 J_dyn += (viol * viol * viol) * dt; // Riemann scaling
+    //         }
+    //     }
+    // }
+
+    // final weighted sum (add the 4 new terms)
+    return time_weight_ * J_time + jerk_weight_ * J_jerk + stat_weight_ * J_stat + dyn_constr_vel_weight_ * J_vel + dyn_constr_acc_weight_ * J_acc + dyn_constr_jerk_weight_ * J_jmax + dyn_constr_bodyrate_weight_ * J_om + dyn_constr_tilt_weight_ * J_tilt + dyn_constr_thrust_weight_ * J_thr + dyn_weight_ * J_dyn;
+}
+// -----------------------------------------------------------------------------
+
+double SolverLBFGS::evaluateObjectiveOcclusion(const VecXd &z) const
 {
     // Reconstruct
     std::vector<Vec3> P, V, A;

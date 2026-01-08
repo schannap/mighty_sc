@@ -22,6 +22,8 @@
 #include <omp.h>
 #include <set>
 
+//
+#include <dgp/map_util.hpp>
 // ROS
 #include <mighty/mighty_type.hpp>
 #include <decomp_util/ellipsoid_decomp.h>
@@ -136,6 +138,22 @@ namespace lbfgs
          */
         double evaluateObjective(const VecXd &z) const;
 
+        // -----------------------------------------------------------------------------
+
+        /**
+         * @brief Evaluate the full trajectory objective (time + dynamic‐avoidance +
+         *        static barrier + jerk + dynamic‐constraint penalties + occlusion penalties).
+         *
+         * @param z  Decision vector [p₀,v₀,a₀ … p_M,v_M,a_M; σ₀…σ_{M-1}]
+         * @return   Scalar value of the objective at z
+         */
+        double evaluateObjectiveOcclusion(const VecXd &z) const;
+
+        /**
+         * @brief Reference the map_util_for_planning_ in order to identify occlusions
+         * @param map Map for planning
+         */
+        void setMapUtil(mighty::VoxelMapUtil* map) { map_util_ = map; }
         // -----------------------------------------------------------------------------
 
         /**
@@ -441,6 +459,8 @@ namespace lbfgs
             return initial_guess_wps_;
         }
 
+    private:
+        mighty::VoxelMapUtil* map_util_ = nullptr; // map ownership for optimization and detection of occlusion
     private:
 
         // obstacles
