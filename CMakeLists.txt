@@ -87,11 +87,8 @@ ament_target_dependencies(test_lbfgs_solver rclcpp example_interfaces dynus_inte
 
 # Add the executable for the occlusion detection test file
 # add_executable(test_occlusion_detection src/test/test_occlusion_detection.cpp)
-# ament_target_dependencies(test_occlusion_detection rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs)
-
-add_executable(test_occlusion_detection src/test/test_occlusion_detection.cpp)
-ament_target_dependencies(test_occlusion_detection rclcpp Eigen3 sensor_msgs std_msgs visualization_msgs geometry_msgs)
-target_link_libraries(test_occlusion_detection OpenMP::OpenMP_CXX ${PCL_LIBRARIES})
+# ament_target_dependencies(test_occlusion_detection rclcpp Eigen3 sensor_msgs std_msgs visualization_msgs geometry_msgs)
+# target_link_libraries(test_occlusion_detection OpenMP::OpenMP_CXX ${PCL_LIBRARIES})
 
 
 # Add the convert velodyne executable
@@ -146,10 +143,10 @@ install(TARGETS
 )
 
 # install for tests
-install(TARGETS
-  test_occlusion_detection
-  DESTINATION lib/${PROJECT_NAME}
-)
+# install(TARGETS
+#   test_occlusion_detection
+#   DESTINATION lib/${PROJECT_NAME}
+# )
 
 # install for libraries
 install(TARGETS

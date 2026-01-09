@@ -835,7 +835,8 @@ bool MIGHTY::generateLocalTrajectory(const state &local_A, double A_time,
 
   // Create reference to map_util_for_planning_
   whole_traj_solver_ptr_->setMapUtil(dgp_manager_.map_util_for_planning_.get());
-
+  // State whether we are using the occlusion cost term or not
+  whole_traj_solver_ptr->setUseOccCost(false);
   std::vector<std::shared_ptr<dynTraj>> local_trajs;
   getTrajs(local_trajs);
 

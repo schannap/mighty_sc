@@ -157,6 +157,11 @@ namespace lbfgs
         // -----------------------------------------------------------------------------
 
         /**
+         * @brief Set the boolean flag for whether to use the occlusion cost term
+         * @param true or false
+         */
+        void setUseOccCost(bool use_occ_cost) {use_occ_cost_ = use_occ_cost;}
+        /**
          * @brief Compute the analytic gradient ∇J(z).
          * @param z      Decision variable vector [free CPs; slack times] (size K).
          * @param[out] grad  Gradient vector (size K), overwritten on output.
@@ -461,6 +466,7 @@ namespace lbfgs
 
     private:
         mighty::VoxelMapUtil* map_util_ = nullptr; // map ownership for optimization and detection of occlusion
+        bool use_occ_cost_ = false; // to know whether to use the occlusion cost or not (ablation study)
     private:
 
         // obstacles
@@ -553,11 +559,7 @@ namespace lbfgs
                                   unsigned seed /*=0*/);
 
         void checkGradCoordinates(const VecXd &z0, int max_coords, double eps, unsigned seed);
-        // // For exposing the map in lbfgs_solver.cpp
-        // void setMapUtil(std::shared_ptr<const mighty::VoxelMapUtil> map);
     private:
-        // // For exposing the map in lbfgs_solver.cpp
-        // std::shared_ptr<const mighty::VoxelMapUtil> map_util_;
         /// Find which segment index s contains time t_i
         int findSegment(double ti, const std::vector<double> &T) const;
 
@@ -713,6 +715,7 @@ namespace lbfgs
         double dyn_constr_bodyrate_weight_ = 1.0;
         double dyn_constr_tilt_weight_ = 1.0;
         double dyn_constr_thrust_weight_ = 1.0;
+        double occ_weight_ = 1.0;
         int num_dyn_obst_samples_; // Number of dynamic obstacle samples
         double Co_; // for static obstacle avoidance
         double Cw_;

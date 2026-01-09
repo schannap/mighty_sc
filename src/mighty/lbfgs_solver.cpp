@@ -2009,7 +2009,7 @@ double SolverLBFGS::evaluateObjective(const VecXd &z) const
     return time_weight_ * J_time + jerk_weight_ * J_jerk + stat_weight_ * J_stat + dyn_constr_vel_weight_ * J_vel + dyn_constr_acc_weight_ * J_acc + dyn_constr_jerk_weight_ * J_jmax + dyn_constr_bodyrate_weight_ * J_om + dyn_constr_tilt_weight_ * J_tilt + dyn_constr_thrust_weight_ * J_thr + dyn_weight_ * J_dyn;
 }
 // -----------------------------------------------------------------------------
-
+// TODO: this function probably will not be used. Remove it for clarity
 double SolverLBFGS::evaluateObjectiveOcclusion(const VecXd &z) const
 {
     // Reconstruct
@@ -2304,6 +2304,7 @@ double SolverLBFGS::evaluateObjectiveAndGradientFused(const Eigen::VectorXd &z, 
     double J_om = 0.0;
     double J_tilt = 0.0;
     double J_thr = 0.0;
+    double J_occ = 0.0;
 
     // Grad accumulators in (P,V,A,T) space
     std::vector<Vec3> gP(knots, Vec3::Zero());
@@ -2380,7 +2381,7 @@ double SolverLBFGS::evaluateObjectiveAndGradientFused(const Eigen::VectorXd &z, 
         gCP_jerk[5] = 2.0 * Cj * d32;
 
         // ∂J_jerk/∂T (factor path): d/dT[(3600 T^{-5})] * S = (-5)*3600*T^{-6} * S
-        double gT_jerk = (-5.0) * 3600.0 * std::pow(invT, 6) * S;
+        double gT_jerk = (-5.0) * 3600.0 * std::pow(invT, 6) * S;        
 
         // ---- (2) Sampled terms (static corridor + dynamic limits), accumulate CP/T grads
         std::array<Vec3, 6> gCP_samp; // accumulates all sampled constraints in this segment
@@ -2647,6 +2648,16 @@ double SolverLBFGS::evaluateObjectiveAndGradientFused(const Eigen::VectorXd &z, 
                         gT_samp += -40.0 * ga_phys.dot(d2) * invT3;
                     }
                 }
+                if (use_occ_cost_ == true)
+                {
+                    // Check if there is an occlusion at the current position
+                    // TODO: can work towards fixing the functions input type to match x without casting
+                    auto occlusion = map_util_->detectOcclusionAt( x, map_util_->getRes(), 6); 
+                    if (occlusion.is_occlusion){
+                        double cos_sim = occlusion.normal.cast<double>().normalized().dot(v.cast<double>().normalized());
+                        J_occ += cos_sim;
+                    }
+                }
 
             } // samples
         } // if kappa > 0
@@ -2850,6 +2861,10 @@ double SolverLBFGS::evaluateObjectiveAndGradientFused(const Eigen::VectorXd &z, 
         grad[K_cp_ + s] += time_weight_ * dTdtau; // time term gradient
     }
 
+    // Set the J_occ to 0 if not using that cost term
+    if (use_occ_cost_ == false){
+        J_occ = 0.0;
+    }
     // -------------------------------------------------------------------------
     // Final weighted objective (mirrors lbfgs evaluateObjective)
     // -------------------------------------------------------------------------
@@ -2864,7 +2879,8 @@ double SolverLBFGS::evaluateObjectiveAndGradientFused(const Eigen::VectorXd &z, 
         dyn_constr_jerk_weight_ * J_jmax +
         dyn_constr_bodyrate_weight_ * J_om +
         dyn_constr_tilt_weight_ * J_tilt +
-        dyn_constr_thrust_weight_ * J_thr;
+        dyn_constr_thrust_weight_ * J_thr +
+        occ_weight_ * J_occ;
 
     return f;
 }

@@ -821,7 +821,7 @@ namespace mighty
       int free_neighbor_count = 0;
     };
     OcclusionInfo detectOcclusionAt(
-        const Veci<3>& pt_int,
+        const Vecf<3>& pt,
         float neighbor_radius,      // meters
         int min_free_neighbors
     ) 
@@ -829,7 +829,7 @@ namespace mighty
     // Especially because the getNeighborIndices uses a neighbor radius, which should be dependent on res etc.
     {
       OcclusionInfo info;
-
+      Veci<3> pt_int = floatToInt(pt);
       // 1. Outside map → not occlusion
       if (isOutside(pt_int))
         return info;
