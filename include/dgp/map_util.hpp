@@ -829,6 +829,7 @@ namespace mighty
     // Especially because the getNeighborIndices uses a neighbor radius, which should be dependent on res etc.
     {
       OcclusionInfo info;
+      // convert from position to integer voxel that contains it
       Veci<3> pt_int = floatToInt(pt);
       // 1. Outside map → not occlusion
       if (isOutside(pt_int))
@@ -847,6 +848,7 @@ namespace mighty
 
       for (int idx : neighbor_indices)
       {
+        // std::cout << "Entering a loop to check neighbors \n";
         Veci<3> n_int = indexToVeci3(idx);
 
         if (isOutside(n_int))
@@ -862,11 +864,10 @@ namespace mighty
       }
 
       // 4. Threshold
-      if (info.free_neighbor_count >= min_free_neighbors &&
-          normal_sum.norm() > 1e-6)
+      if (info.free_neighbor_count >= min_free_neighbors) //&& normal_sum.norm() > 1e-6)
       {
         info.is_occlusion = true;
-        info.normal = normal_sum.normalized();
+        info.normal = normal_sum.normalized(); // if the normal is 0, then that does not affect the cost at all (will not encourage any different paths from nominal)
       }
 
       return info;
