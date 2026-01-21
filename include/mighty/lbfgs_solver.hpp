@@ -466,7 +466,7 @@ namespace lbfgs
 
     private:
         mighty::VoxelMapUtil* map_util_ = nullptr; // map ownership for optimization and detection of occlusion
-        bool use_occ_cost_ = false; // to know whether to use the occlusion cost or not (ablation study)
+        bool use_occ_cost_ = true; // to know whether to use the occlusion cost or not (ablation study)
     private:
 
         // obstacles
@@ -715,7 +715,7 @@ namespace lbfgs
         double dyn_constr_bodyrate_weight_ = 1.0;
         double dyn_constr_tilt_weight_ = 1.0;
         double dyn_constr_thrust_weight_ = 1.0;
-        double occ_weight_ = 1.0;
+        double occ_weight_ = -1.0;
         int num_dyn_obst_samples_; // Number of dynamic obstacle samples
         double Co_; // for static obstacle avoidance
         double Cw_;

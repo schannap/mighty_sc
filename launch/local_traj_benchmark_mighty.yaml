@@ -1,0 +1,13 @@
+session_name: local_traj_benchmark
+windows:
+  - window_name: main
+    layout: tiled
+    shell_command_before:
+      - export ROS_DOMAIN_ID=7
+    
+    panes:
+      # base station
+      - shell_command:
+        - sleep 5
+        - ros2 launch mighty local_traj_benchmark_mighty.launch.py
+      # now launch rviz (the saved parameters are in rviz/mighty.rviz)

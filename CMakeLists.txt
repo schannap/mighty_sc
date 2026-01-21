@@ -102,8 +102,12 @@ ament_target_dependencies(convert_velodyne_to_ros_time rclcpp rclcpp_components 
 # For the corridor generator
 add_executable(corridor_generator_node src/mighty/corridor_generator_node.cpp src/mighty/mighty.cpp src/dgp/dgp_manager.cpp src/dgp/utils.cpp src/dgp/dgp_planner.cpp src/dgp/graph_search.cpp src/mighty/utils.cpp src/mighty/lbfgs_solver.cpp src/mighty/lbfgs_solver_utils.cpp)
 target_link_libraries(corridor_generator_node  Eigen3::Eigen ${PCL_LIBRARIES})
-# ament_target_dependencies(corridor_generator_node rclcpp sensor_msgs geometry_msgs visualization_msgs pcl_conversions decomp_ros_msgs tf2 tf2_ros tf2_geometry_msgs)
 ament_target_dependencies(corridor_generator_node rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs tf2 tf2_ros tf2_eigen std_srvs pcl_ros)
+
+# For local trajectory benchmarking
+add_executable(local_traj_benchmark_mighty src/mighty/local_traj_benchmark_mighty.cpp src/mighty/mighty.cpp src/dgp/dgp_manager.cpp src/dgp/utils.cpp src/dgp/dgp_planner.cpp src/dgp/graph_search.cpp src/mighty/utils.cpp src/mighty/lbfgs_solver.cpp src/mighty/lbfgs_solver_utils.cpp)
+target_link_libraries(local_traj_benchmark_mighty  Eigen3::Eigen ${PCL_LIBRARIES})
+ament_target_dependencies(local_traj_benchmark_mighty rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs tf2 tf2_ros tf2_eigen std_srvs pcl_ros)
 
 # For dynamic obstacles in Gazebo
 add_library(move_model SHARED src/sim/move_model.cpp)
@@ -149,6 +153,7 @@ install(TARGETS
   convert_velodyne_to_ros_time
   dynamic_forest_node
   corridor_generator_node
+  local_traj_benchmark_mighty
   DESTINATION lib/${PROJECT_NAME}
 )
 

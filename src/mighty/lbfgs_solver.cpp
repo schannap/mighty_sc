@@ -2354,7 +2354,6 @@ double SolverLBFGS::evaluateObjectiveAndGradientFused(const Eigen::VectorXd &z, 
     // -------------------------------------------------------------------------
     for (int s = 0; s < M; ++s)
     {
-
         const double Ts = T[s];
         const double invT = 1.0 / (Ts + 1e-16);
         const double invT2 = invT * invT;
@@ -2652,7 +2651,7 @@ double SolverLBFGS::evaluateObjectiveAndGradientFused(const Eigen::VectorXd &z, 
                 {
                     // Check if there is an occlusion at the current position
                     // TODO: can work towards fixing the functions input type to match x without casting
-                    auto occlusion = map_util_->detectOcclusionAt( x, map_util_->getRes(), 6); 
+                    auto occlusion = map_util_->detectOcclusionAt( x, map_util_->getRes(), 6);
                     if (occlusion.is_occlusion){
                         double cos_sim = occlusion.normal.cast<double>().normalized().dot(v.cast<double>().normalized());
                         J_occ += cos_sim;
@@ -2880,7 +2879,7 @@ double SolverLBFGS::evaluateObjectiveAndGradientFused(const Eigen::VectorXd &z, 
         dyn_constr_bodyrate_weight_ * J_om +
         dyn_constr_tilt_weight_ * J_tilt +
         dyn_constr_thrust_weight_ * J_thr +
-        occ_weight_ * J_occ;
+        -0.5 * J_occ;
 
     return f;
 }
