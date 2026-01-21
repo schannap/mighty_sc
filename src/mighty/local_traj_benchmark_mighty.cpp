@@ -600,6 +600,35 @@ static ConstraintReport analyzeConstraintsSampled(
     return rep;
 }
 
+auto applyConstraintReport = [](BenchResult &out, const ConstraintReport &rep)
+{
+    out.corridor_max_min_violation = rep.corridor_max_min_violation;
+    out.corridor_t_at_max = rep.corridor_t_at_max;
+    out.corridor_p_at_max = rep.corridor_p_at_max;
+    out.corridor_best_poly_idx_at_max = rep.corridor_best_poly_idx_at_max;
+
+    out.v_max_observed = rep.v_max_observed;
+    out.v_max_excess = rep.v_max_excess;
+    out.v_t_at_max = rep.v_t_at_max;
+
+    out.a_max_observed = rep.a_max_observed;
+    out.a_max_excess = rep.a_max_excess;
+    out.a_t_at_max = rep.a_t_at_max;
+
+    out.j_max_observed = rep.j_max_observed;
+    out.j_max_excess = rep.j_max_excess;
+    out.j_t_at_max = rep.j_t_at_max;
+
+    out.corridor_violated = rep.corridor_violated;
+    out.v_violated = rep.v_violated;
+    out.a_violated = rep.a_violated;
+    out.j_violated = rep.j_violated;
+
+    out.jerk_smoothness_l1 = rep.jerk_smoothness_l1;
+    out.jerk_rms = rep.jerk_rms;
+
+    out.traj_length_m = rep.traj_length_m;
+};
 // ------------------------ trajectory dump helpers (NEW) ------------------------
 
 static inline bool ensureDir(const fs::path &p)
@@ -1006,6 +1035,9 @@ public:
                         std::chrono::duration<double>(std::max(0.05, playback_period_sec_)),
                         std::bind(&LocalTrajBenchmarkNode::publishNext, this));
                 }
+                const fs::path out_dir = fs::path(traj_dump_run_dir_);
+                std::cout << "Trajectories dumped to directory: " << out_dir.string();
+
             }
         }
     }
@@ -1068,6 +1100,7 @@ private:
             {
 
                 auto t0 = std::chrono::high_resolution_clock::now();
+                const std::string fname = fs::path(r.file).filename().string();
 
                 bool ok = solveMighty(r);
 
@@ -1295,6 +1328,8 @@ private:
             poly_seed_eps_,
             debug_poly_check_);
 
+        const std::string fname = fs::path(r.file).filename().string();
+
         // Cache corridor polyhedra for RViz
         {
             auto msg = DecompROS::polyhedron_array_to_ros(poly_out);
@@ -1398,18 +1433,44 @@ private:
                         r.file.c_str(), status, fopt_);
             return false;
         }
-        RCLCPP_INFO(get_logger(),
-                        "Optimization success (%s): status=%d fopt=%.3f",
-                        r.file.c_str(), status, fopt_);
-        r.success = true;
-        r.status = "success";
+        // RCLCPP_INFO(get_logger(),
+        //                 "Optimization success (%s): status=%d fopt=%.3f",
+        //                 r.file.c_str(), status, fopt_);
+  
 
         // -----------------------------
         // 6. Extract trajectory
         // -----------------------------
-        std::vector<state> solution_states;
-        PieceWiseQuinticPol pwp;
-        // TODO: find the best way to decode and represent results
+        solver->reconstructPVATCPopt(zopt_);
+        std::vector<state> goal_setpoints;
+        solver->getGoalSetpoints(goal_setpoints);
+
+        // TODO: replace this with the maybe dump trajectory thing (refer to dynus code)
+        const auto crep = analyzeConstraintsSampled(
+                            goal_setpoints, l_constraints, par_.dc,
+                            par_.v_max, par_.a_max, par_.j_max);
+        applyConstraintReport(r, crep);
+
+        r.opt_traj_ma = stateVector2ColoredMarkerArray(goal_setpoints, /*type=*/1, par_.v_max, this->now());
+        r.success = true;
+        r.status = "success";
+
+        maybeDumpTrajectory(fname, goal_setpoints, r);
+
+        // // Print the goal setpoints
+        // std::cout << "Number of goal setpoints: " << goal_setpoints.size() << "\n";
+        // std::cout << "Goal setpoints:\n";
+        // for (const auto &sp : goal_setpoints)
+        // {
+        //     std::cout << "Time: " << sp.t << ", Pos: " << sp.pos.transpose()
+        //               << ", Vel: " << sp.vel.transpose()
+        //               << ", Accel: " << sp.accel.transpose()
+        //               << ", Jerk: " << sp.jerk.transpose()
+        //               << ", Yaw: " << sp.yaw
+        //               << ", DYaw: " << sp.dyaw
+        //               << "\n";
+        // }
+
         r.start = start;
         r.goal  = goal;
 
