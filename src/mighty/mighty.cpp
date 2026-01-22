@@ -352,7 +352,13 @@ void MIGHTY::getOriginalGlobalPath(vec_Vecf<3> &original_global_path)
   original_global_path = original_global_path_;
   mtx_original_global_path_.unlock();
 }
-
+ 
+// ---------------------------------------------------------------------------
+// Get the map util for planning
+std::shared_ptr<mighty::MapUtil<3>> MIGHTY::getMapUtilForPlanningShared() const
+{
+  return dgp_manager_.map_util_for_planning_;
+}
 // ----------------------------------------------------------------------------
 
 void MIGHTY::getFreeGlobalPath(vec_Vecf<3> &free_global_path)

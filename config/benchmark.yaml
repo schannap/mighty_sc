@@ -11,6 +11,8 @@ traj_benchmark_mighty_node:
 
     ros__parameters:
 
+        use_occ_cost: true
+
         # Vehicle type
         vehicle_type: "uav"                                     # ["uav", "ground_robot", "qudruped_robot"]
         
