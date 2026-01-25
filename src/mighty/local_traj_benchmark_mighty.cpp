@@ -40,14 +40,6 @@
 #include <std_msgs/msg/color_rgba.hpp>
 
 
-// Structure will probably look something like this:
-// - function to load in safe corridors
-// - Node function that initializes the appropriate solver
-// - Node function that solves (a single) path without replanning from start to goal
-// - Node function that saves the results of the correct solver
-// - function that initializes the Mighty solver
-// - function that solves the Mighty solver
-// - function that saves the Mighty results
 namespace fs = std::filesystem;
 using namespace std::chrono;
 
@@ -736,6 +728,7 @@ public:
     LocalTrajBenchmarkNode() : Node("local_traj_benchmark_node")
     {
 
+        // Declar parameters
         // I/O + visualization
         declare_parameter<std::string>("sfc_dir", "/home/kkondo/code/mighty_ws/src/mighty/data");
         declare_parameter<std::string>("file_ext", ".mysco2");
@@ -774,10 +767,6 @@ public:
         declare_parameter<std::string>("planner_name", "mighty");
         declare_parameter<bool>("use_single_threaded", false);
 
-
-        ////////////////////////////////////////////////////////////////////////////
-
-                // Declare parameters
         // ---------------- Vehicle / mode ----------------
         this->declare_parameter<std::string>("vehicle_type", "UAV");
         this->declare_parameter<bool>("provide_goal_in_global_frame", true);
@@ -959,14 +948,18 @@ public:
 
 private:
 
+    // Read in the pointcloud and update the map (this should only occur once since 
+    // the benchmarking is for a single trajectory per polytope in a static snapshot)
     void mapCallback(
         const sensor_msgs::msg::PointCloud2::ConstPtr &map_msg,
         const sensor_msgs::msg::PointCloud2::ConstPtr &unk_msg)
     {
-        if (!solver_initialized_){
+        // Wait until parameters and pointer for solver (mighty) were set
+        if (!solvers_initialized_){
             RCLCPP_WARN(get_logger(), "updateMap called before MIGHTY initialized");
             return;
         }
+        // If the map was already updated, no longer need to keep executing callback
         if (map_ready_){
             return;
         }
@@ -977,31 +970,28 @@ private:
         pcl::PointCloud<pcl::PointXYZ>::Ptr unk_pc(new pcl::PointCloud<pcl::PointXYZ>());
         pcl::fromROSMsg(*unk_msg, *unk_pc);
         RCLCPP_INFO(get_logger(), "going to update map.");
-
         mighty_ptr_->updateMap(map_pc, unk_pc);
         RCLCPP_INFO(get_logger(), "updated map.");
-
         map_ready_ = true;
         RCLCPP_INFO(get_logger(), "Map received and stored.");
     }
 
     void solveAll(){
 
-        if (!solver_initialized_){
-            initializeMightySolver();
+        if (!solvers_initialized_){
+            initializeSolvers();
         }
         if (!map_ready_){
-            RCLCPP_INFO(get_logger(), "map not received");
+            // RCLCPP_INFO(get_logger(), "map not received");
             return;
         }
         if (planning_started_){
             return;
         }
         planning_started_ = true;
-                // Read params
-        std::vector<std::string> planner_names = this->get_parameter("planner_names").as_string_array();
+        // Read params
         std::vector<int64_t> num_N_list_64 = this->get_parameter("num_N_list").as_integer_array();
-
+        std::vector<std::string> planner_names = this->get_parameter("planner_names").as_string_array();
         if (planner_names.empty())
             planner_names.push_back(this->get_parameter("planner_name").as_string());
 
@@ -1070,10 +1060,8 @@ private:
                     else{
                         occ_identifier = "";
                     }
-                    std::cout << "reached 1024";
 
                     traj_dump_run_dir_ = (root / (planner_name_ + "_N" + std::to_string(par_.num_N) + occ_identifier)).string();
-                    std::cout << "reached 1027";
 
                     if (!ensureDir(fs::path(traj_dump_run_dir_)))
                     {
@@ -1092,7 +1080,6 @@ private:
                 {
                     traj_dump_enable_this_run_ = false;
                 }
-                // RCLCPP_INFO(get_logger(), "reached 1046");
                 // Publishers
                 rclcpp::QoS qos(rclcpp::KeepLast(1));
                 qos.reliable();
@@ -1103,15 +1090,10 @@ private:
                     traj_committed_topic_, qos); // qos was originally 10 
                 pub_dgp_path_marker_ = create_publisher<visualization_msgs::msg::MarkerArray>(
                     dgp_path_topic_, qos);
-                // RCLCPP_INFO(get_logger(), "reached 1057");
                 // Load + solve
                 loadAll();
-                // RCLCPP_INFO(get_logger(), "reached 1060");
-                solvePlanner(planner_name); // this should initialize a solver and then run the optimization
-                // solveAll();
+                solvePlanner(planner_name); // run the optimization and save results
                 writeCsv();
-                // RCLCPP_INFO(this->get_logger(), "is visualize true %s",std::to_string(visualize_).c_str() );
-                // RCLCPP_INFO(this->get_logger(), "is results empty %s", std::to_string(results_.empty()).c_str());
                 if (visualize_ && !results_.empty())
                 {
                     playback_timer_ = create_wall_timer(
@@ -1125,6 +1107,7 @@ private:
         }
 
     }
+
     void loadAll()
     {
         results_.clear();
@@ -1177,37 +1160,38 @@ private:
 
     void solvePlanner(std::string solver_name){
         if (solver_name == "mighty"){
-            // Use occ cost for mighty?
-            use_occ_cost_ = get_parameter("use_occ_cost").as_bool();
-            // For MIGHTY
-            // initializeMightySolver();
-            // RCLCPP_INFO(get_logger(), "reached 1150");
-            // RCLCPP_INFO(get_logger(), "reached 1152");
-            // TODO: check if a mutex is needed
             // loop over all the safety corridors from the saved files
             for (auto &r : results_)
             {
-
                 auto t0 = std::chrono::high_resolution_clock::now();
                 const std::string fname = fs::path(r.file).filename().string();
-
                 bool ok = solveMighty(r);
-
                 auto t1 = std::chrono::high_resolution_clock::now();
-
                 r.success = ok;
-                // r.solve_time_ms =
-                //     std::chrono::duration<double, std::milli>(t1 - t0).count();
             }
 
         }
     }
 
+    void initializeSolvers(){
+        if (solvers_initialized_){
+            return;
+        }
+
+        std::vector<std::string> planner_names = this->get_parameter("planner_names").as_string_array();
+        if (planner_names.empty())
+            planner_names.push_back(this->get_parameter("planner_name").as_string());
+
+        for (const auto &name: planner_names){
+            if (name == "mighty"){
+                initializeMightySolver();
+            }
+        }
+        solvers_initialized_ = true;
+    }
     void initializeMightySolver(){
 
-
         // Set the parameters
-
         // Vehicle type (UAV, Wheeled Robit, or Quadruped)
         par_.vehicle_type = this->get_parameter("vehicle_type").as_string();
         par_.provide_goal_in_global_frame = this->get_parameter("provide_goal_in_global_frame").as_bool();
@@ -1391,8 +1375,10 @@ private:
         planner_params_.BIG = 1e8;
         planner_params_.dc = par_.dc;                                             // descretiation constant
         planner_params_.init_turn_bf = par_.init_turn_bf;
+        
+        use_occ_cost_ = this->get_parameter("use_occ_cost").as_bool();
+        RCLCPP_INFO(get_logger(), "useing occ cost %d", use_occ_cost_);
         mighty_ptr_ = std::make_shared<MIGHTY>(par_);
-        solver_initialized_ = true;
     }
     
 
@@ -1462,7 +1448,7 @@ private:
         auto solver = std::make_shared<lbfgs::SolverLBFGS>();
         solver->initializeSolver(planner_params_);
         solver->setUseOccCost(use_occ_cost_);
-        // RCLCPP_INFO(get_logger(), "reached 1431");
+        // RCLCPP_INFO(get_logger(), "Use occlusion cost %d: ", use_occ_cost_);
         solver->setMapUtil(mighty_ptr_->getMapUtilShared().get());
         auto map_util = mighty_ptr_->getMapUtilShared();
 
@@ -1724,7 +1710,7 @@ private:
     std::shared_ptr<MIGHTY> mighty_ptr_;
     std::mutex map_mutex_;
     bool use_occ_cost_;
-    bool solver_initialized_{false};
+    bool solvers_initialized_{false};
     bool map_ready_{false};
     bool planning_started_{false};
     rclcpp::TimerBase::SharedPtr planning_timer_;

@@ -24,4 +24,5 @@ windows:
         - ros2 launch mighty onboard_mighty.launch.py x:=0 y:=0 z:=3.0 yaw:=1.57
       
       - shell_command:
+        - sleep 10
         - ros2 launch mighty local_traj_benchmark_mighty.launch.py
