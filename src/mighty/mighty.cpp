@@ -359,6 +359,10 @@ std::shared_ptr<mighty::MapUtil<3>> MIGHTY::getMapUtilForPlanningShared() const
 {
   return dgp_manager_.map_util_for_planning_;
 }
+std::shared_ptr<mighty::MapUtil<3>> MIGHTY::getMapUtilShared() const
+{
+  return dgp_manager_.map_util_;
+}
 // ----------------------------------------------------------------------------
 
 void MIGHTY::getFreeGlobalPath(vec_Vecf<3> &free_global_path)

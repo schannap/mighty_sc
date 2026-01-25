@@ -22,6 +22,7 @@ def generate_launch_description():
         executable='local_traj_benchmark_mighty',
         name='local_traj_benchmark_mighty',
         output='screen',
+        namespace='NX01',
         # Toggle prefix by setting use_gdb:=true/false
         # prefix=gdb_prefix,
         parameters=[parameters_path],

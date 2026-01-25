@@ -19,10 +19,15 @@
 
 #include "timer.hpp"
 #include "dgp/termcolor.hpp"
-#include "mighty/mighty_type.hpp"
+// #include "mighty/mighty_type.hpp"
 #include <mighty/utils.hpp>
-#include "dgp/dgp_manager.hpp"
-#include "mighty/lbfgs_solver.hpp"
+// #include <mighty/mighty_node.hpp>
+#include <mighty/mighty.hpp>
+#include <message_filters/subscriber.h>
+#include <message_filters/time_synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
+// #include "dgp/dgp_manager.hpp"
+// #include "mighty/lbfgs_solver.hpp"
 // #include <mighty/gurobi_solver.hpp>
 #include <decomp_rviz_plugins/data_ros_utils.hpp>
 #include <decomp_util/ellipsoid_decomp.h>
@@ -924,9 +929,76 @@ public:
         // ---------------- Debug ----------------
         this->declare_parameter<bool>("debug_verbose", false);
 
+        // ----------------- Use occlusion cost --------------
+        this->declare_parameter<bool>("use_occ_cost", true);
+
 
         ///////////////////////////////////////////////////////////////////////////
-        // Read params
+
+
+
+        // poly_seed_eps_ = get_parameter("poly_seed_eps").as_double();
+        // debug_poly_check_ = get_parameter("debug_poly_check").as_bool();
+
+        // Create map subscription (static map)
+        // Synchronize the occupancy grid and unknown grid
+        this->cb_group_map_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+        rclcpp::SubscriptionOptions options_map;
+        options_map.callback_group = this->cb_group_map_;
+        occup_grid_sub_.subscribe(this, "occupancy_grid", rmw_qos_profile_sensor_data, options_map);
+        unknown_grid_sub_.subscribe(this, "unknown_grid", rmw_qos_profile_sensor_data, options_map);
+        sync_.reset(new Sync(MySyncPolicy(10), occup_grid_sub_, unknown_grid_sub_));
+        sync_->registerCallback(std::bind(&LocalTrajBenchmarkNode::mapCallback, this, std::placeholders::_1, std::placeholders::_2));
+
+        // To run the planning/solving
+        planning_timer_ = create_wall_timer(
+        std::chrono::milliseconds(50),
+        std::bind(&LocalTrajBenchmarkNode::solveAll, this));
+
+    }
+
+private:
+
+    void mapCallback(
+        const sensor_msgs::msg::PointCloud2::ConstPtr &map_msg,
+        const sensor_msgs::msg::PointCloud2::ConstPtr &unk_msg)
+    {
+        if (!solver_initialized_){
+            RCLCPP_WARN(get_logger(), "updateMap called before MIGHTY initialized");
+            return;
+        }
+        if (map_ready_){
+            return;
+        }
+        // use PCL’s own Ptr (boost::shared_ptr)
+        pcl::PointCloud<pcl::PointXYZ>::Ptr map_pc(new pcl::PointCloud<pcl::PointXYZ>());
+        pcl::fromROSMsg(*map_msg, *map_pc);
+
+        pcl::PointCloud<pcl::PointXYZ>::Ptr unk_pc(new pcl::PointCloud<pcl::PointXYZ>());
+        pcl::fromROSMsg(*unk_msg, *unk_pc);
+        RCLCPP_INFO(get_logger(), "going to update map.");
+
+        mighty_ptr_->updateMap(map_pc, unk_pc);
+        RCLCPP_INFO(get_logger(), "updated map.");
+
+        map_ready_ = true;
+        RCLCPP_INFO(get_logger(), "Map received and stored.");
+    }
+
+    void solveAll(){
+
+        if (!solver_initialized_){
+            initializeMightySolver();
+        }
+        if (!map_ready_){
+            RCLCPP_INFO(get_logger(), "map not received");
+            return;
+        }
+        if (planning_started_){
+            return;
+        }
+        planning_started_ = true;
+                // Read params
         std::vector<std::string> planner_names = this->get_parameter("planner_names").as_string_array();
         std::vector<int64_t> num_N_list_64 = this->get_parameter("num_N_list").as_integer_array();
 
@@ -963,12 +1035,6 @@ public:
         traj_dump_enable_ = get_parameter("traj_dump_enable").as_bool();
         traj_dump_root_dir_ = get_parameter("traj_dump_root_dir").as_string();
         traj_dump_dt_ = get_parameter("traj_dump_dt").as_double();
-
-
-        // poly_seed_eps_ = get_parameter("poly_seed_eps").as_double();
-        // debug_poly_check_ = get_parameter("debug_poly_check").as_bool();
-        double test_threshold = this->get_parameter("fopt_threshold").as_double();
-
         for (const auto &planner_name : planner_names)
         {
             for (int idx = 0; idx < (int)num_N_list.size(); ++idx)
@@ -977,10 +1043,16 @@ public:
                 planner_name_ = planner_name;
                 par_.num_N = num_N;
 
-
+                std::string occ_identifier;
+                if (use_occ_cost_==true){
+                    occ_identifier = "with_occ_";
+                }
+                else{
+                    occ_identifier = "";
+                }
                 std::string thread_string = use_single_threaded_ ? "single_thread" : "multi_thread";
                 csv_out_ = "/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/" + thread_string + "/" +
-                           planner_name_ + "_" + std::to_string(par_.num_N) + "_benchmark.csv";
+                           planner_name_ + "_" + std::to_string(par_.num_N) + occ_identifier + "_benchmark.csv";
 
                 // NEW: derive dump directory for this run
                 if (traj_dump_enable_)
@@ -991,7 +1063,17 @@ public:
                     else
                         root = fs::path(csv_out_).parent_path() / "traj_dump";
 
-                    traj_dump_run_dir_ = (root / (planner_name_ + "_N" + std::to_string(par_.num_N))).string();
+                    std::string occ_identifier;
+                    if (use_occ_cost_){
+                        occ_identifier = "with_occ_";
+                    }
+                    else{
+                        occ_identifier = "";
+                    }
+                    std::cout << "reached 1024";
+
+                    traj_dump_run_dir_ = (root / (planner_name_ + "_N" + std::to_string(par_.num_N) + occ_identifier)).string();
+                    std::cout << "reached 1027";
 
                     if (!ensureDir(fs::path(traj_dump_run_dir_)))
                     {
@@ -1010,7 +1092,7 @@ public:
                 {
                     traj_dump_enable_this_run_ = false;
                 }
-
+                // RCLCPP_INFO(get_logger(), "reached 1046");
                 // Publishers
                 rclcpp::QoS qos(rclcpp::KeepLast(1));
                 qos.reliable();
@@ -1021,9 +1103,10 @@ public:
                     traj_committed_topic_, qos); // qos was originally 10 
                 pub_dgp_path_marker_ = create_publisher<visualization_msgs::msg::MarkerArray>(
                     dgp_path_topic_, qos);
-
+                // RCLCPP_INFO(get_logger(), "reached 1057");
                 // Load + solve
                 loadAll();
+                // RCLCPP_INFO(get_logger(), "reached 1060");
                 solvePlanner(planner_name); // this should initialize a solver and then run the optimization
                 // solveAll();
                 writeCsv();
@@ -1040,9 +1123,8 @@ public:
 
             }
         }
-    }
 
-private:
+    }
     void loadAll()
     {
         results_.clear();
@@ -1078,6 +1160,7 @@ private:
             return;
 
         const std::string base = sanitizeFilename("traj_" + planner_name_ + "_N" + std::to_string(par_.num_N) + "__" + case_fname);
+        
         const fs::path out_csv = fs::path(traj_dump_run_dir_) / (base + ".csv");
 
         dumpTrajectoryCsvV1(out_csv,
@@ -1094,7 +1177,13 @@ private:
 
     void solvePlanner(std::string solver_name){
         if (solver_name == "mighty"){
-
+            // Use occ cost for mighty?
+            use_occ_cost_ = get_parameter("use_occ_cost").as_bool();
+            // For MIGHTY
+            // initializeMightySolver();
+            // RCLCPP_INFO(get_logger(), "reached 1150");
+            // RCLCPP_INFO(get_logger(), "reached 1152");
+            // TODO: check if a mutex is needed
             // loop over all the safety corridors from the saved files
             for (auto &r : results_)
             {
@@ -1302,8 +1391,12 @@ private:
         planner_params_.BIG = 1e8;
         planner_params_.dc = par_.dc;                                             // descretiation constant
         planner_params_.init_turn_bf = par_.init_turn_bf;
-
+        mighty_ptr_ = std::make_shared<MIGHTY>(par_);
+        solver_initialized_ = true;
     }
+    
+
+
 
     // this is for a single corridor
     bool solveMighty(BenchResult &r)
@@ -1367,10 +1460,17 @@ private:
         // 3. Create solver
         // -----------------------------
         auto solver = std::make_shared<lbfgs::SolverLBFGS>();
-        initializeMightySolver();
         solver->initializeSolver(planner_params_);
-        solver->setUseOccCost(false);
-        solver->setMapUtil(nullptr);
+        solver->setUseOccCost(use_occ_cost_);
+        // RCLCPP_INFO(get_logger(), "reached 1431");
+        solver->setMapUtil(mighty_ptr_->getMapUtilShared().get());
+        auto map_util = mighty_ptr_->getMapUtilShared();
+
+        if (!map_util) {
+        RCLCPP_ERROR(get_logger(),
+        "MapUtil is null! Map callback has not run yet.");
+        }
+        // RCLCPP_INFO(get_logger(), "reached 1433");
 
         std::vector<std::shared_ptr<dynTraj>> no_obstacles;
 
@@ -1407,7 +1507,10 @@ private:
         lbfgs_params.mem_size = 256;
 
         auto t0 = std::chrono::high_resolution_clock::now();
+        // RCLCPP_INFO(get_logger(), "reached 1470");
+
         int status = solver->optimize(list_z0[0], zopt_, fopt_, lbfgs_params);
+        // RCLCPP_INFO(get_logger(), "reached 1473");
         auto t1 = std::chrono::high_resolution_clock::now();
 
         double solve_time_ms =
@@ -1445,7 +1548,6 @@ private:
         std::vector<state> goal_setpoints;
         solver->getGoalSetpoints(goal_setpoints);
 
-        // TODO: replace this with the maybe dump trajectory thing (refer to dynus code)
         const auto crep = analyzeConstraintsSampled(
                             goal_setpoints, l_constraints, par_.dc,
                             par_.v_max, par_.a_max, par_.j_max);
@@ -1456,21 +1558,6 @@ private:
         r.status = "success";
 
         maybeDumpTrajectory(fname, goal_setpoints, r);
-
-        // // Print the goal setpoints
-        // std::cout << "Number of goal setpoints: " << goal_setpoints.size() << "\n";
-        // std::cout << "Goal setpoints:\n";
-        // for (const auto &sp : goal_setpoints)
-        // {
-        //     std::cout << "Time: " << sp.t << ", Pos: " << sp.pos.transpose()
-        //               << ", Vel: " << sp.vel.transpose()
-        //               << ", Accel: " << sp.accel.transpose()
-        //               << ", Jerk: " << sp.jerk.transpose()
-        //               << ", Yaw: " << sp.yaw
-        //               << ", DYaw: " << sp.dyaw
-        //               << "\n";
-        // }
-
         r.start = start;
         r.goal  = goal;
 
@@ -1632,6 +1719,23 @@ private:
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_traj_committed_colored_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_dgp_path_marker_;
     rclcpp::TimerBase::SharedPtr playback_timer_;
+
+    // For map
+    std::shared_ptr<MIGHTY> mighty_ptr_;
+    std::mutex map_mutex_;
+    bool use_occ_cost_;
+    bool solver_initialized_{false};
+    bool map_ready_{false};
+    bool planning_started_{false};
+    rclcpp::TimerBase::SharedPtr planning_timer_;
+    // std::shared_ptr<mighty::VoxelMapUtil> map_util;
+    rclcpp::CallbackGroup::SharedPtr cb_group_map_;
+    // Time synchronizer
+    message_filters::Subscriber<sensor_msgs::msg::PointCloud2> occup_grid_sub_;
+    message_filters::Subscriber<sensor_msgs::msg::PointCloud2> unknown_grid_sub_;
+    typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2> MySyncPolicy;
+    typedef message_filters::Synchronizer<MySyncPolicy> Sync;
+    std::shared_ptr<Sync> sync_;
 };
 
 int main(int argc, char **argv)

@@ -131,6 +131,8 @@ public:
   void applyInitiPoseInverseTransform(PieceWisePol &pwp);
   void updateMap(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk);
   std::shared_ptr<mighty::MapUtil<3>> getMapUtilForPlanningShared() const;
+  std::shared_ptr<mighty::MapUtil<3>> getMapUtilShared() const;
+
 private:
   // Parameters
   parameters par_;                                                       // Parameters of the planner

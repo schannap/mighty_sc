@@ -466,7 +466,7 @@ namespace lbfgs
 
     private:
         mighty::VoxelMapUtil* map_util_ = nullptr; // map ownership for optimization and detection of occlusion
-        bool use_occ_cost_ = true; // to know whether to use the occlusion cost or not (ablation study)
+        bool use_occ_cost_ = false; // to know whether to use the occlusion cost or not (ablation study)
     private:
 
         // obstacles
