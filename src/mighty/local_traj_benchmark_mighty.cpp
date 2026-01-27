@@ -931,23 +931,62 @@ public:
 
         // Create map subscription (static map)
         // Synchronize the occupancy grid and unknown grid
-        this->cb_group_map_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+        // this->cb_group_map_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+        // rclcpp::SubscriptionOptions options_map;
+        // options_map.callback_group = this->cb_group_map_;
+        // occup_grid_sub_.subscribe(this, "occupancy_grid", rmw_qos_profile_sensor_data, options_map);
+        // unknown_grid_sub_.subscribe(this, "unknown_grid", rmw_qos_profile_sensor_data, options_map);
+        // sync_.reset(new Sync(MySyncPolicy(10), occup_grid_sub_, unknown_grid_sub_));
+        // sync_->registerCallback(std::bind(&LocalTrajBenchmarkNode::mapCallback, this, std::placeholders::_1, std::placeholders::_2));
+        
+        this->cb_group_map_ =
+        this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+
         rclcpp::SubscriptionOptions options_map;
         options_map.callback_group = this->cb_group_map_;
-        occup_grid_sub_.subscribe(this, "occupancy_grid", rmw_qos_profile_sensor_data, options_map);
-        unknown_grid_sub_.subscribe(this, "unknown_grid", rmw_qos_profile_sensor_data, options_map);
-        sync_.reset(new Sync(MySyncPolicy(10), occup_grid_sub_, unknown_grid_sub_));
-        sync_->registerCallback(std::bind(&LocalTrajBenchmarkNode::mapCallback, this, std::placeholders::_1, std::placeholders::_2));
+
+        occup_grid_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+            "/map_generator/global_cloud",
+            rclcpp::SensorDataQoS(),
+            std::bind(&LocalTrajBenchmarkNode::singleMapCallback,
+                    this,
+                    std::placeholders::_1),
+            options_map);
 
         // To run the planning/solving
         planning_timer_ = create_wall_timer(
         std::chrono::milliseconds(50),
-        std::bind(&LocalTrajBenchmarkNode::solveAll, this));
+        std::bind(&LocalTrajBenchmarkNode::solveAll, this), cb_group_map_);
 
     }
 
 private:
+    // use the pointcloud to create an instance of a map_util_
+    void singleMapCallback(const sensor_msgs::msg::PointCloud2::ConstPtr &map_msg)    
+    {
+        // Wait until parameters and pointer for solver (mighty) were set
+        if (!solvers_initialized_){
+            RCLCPP_WARN(get_logger(), "updateMap called before MIGHTY initialized");
+            return;
+        }
+        // If the map was already updated, no longer need to keep executing callback
+        if (map_ready_){
+            return;
+        }
+        // use PCL’s own Ptr (boost::shared_ptr)
+        pcl::PointCloud<pcl::PointXYZ>::Ptr map_pc(new pcl::PointCloud<pcl::PointXYZ>());
+        pcl::fromROSMsg(*map_msg, *map_pc);
 
+        // create an empty unknown map
+        pcl::PointCloud<pcl::PointXYZ>::Ptr unk_pc(new pcl::PointCloud<pcl::PointXYZ>());
+        unk_pc->header = map_pc->header;
+
+        RCLCPP_INFO(get_logger(), "going to update map.");
+        mighty_ptr_->updateMap(map_pc, unk_pc);
+        RCLCPP_INFO(get_logger(), "updated map.");
+        map_ready_ = true;
+        RCLCPP_INFO(get_logger(), "Map received and stored.");
+    }
     // Read in the pointcloud and update the map (this should only occur once since 
     // the benchmarking is for a single trajectory per polytope in a static snapshot)
     void mapCallback(
@@ -1717,11 +1756,12 @@ private:
     // std::shared_ptr<mighty::VoxelMapUtil> map_util;
     rclcpp::CallbackGroup::SharedPtr cb_group_map_;
     // Time synchronizer
-    message_filters::Subscriber<sensor_msgs::msg::PointCloud2> occup_grid_sub_;
-    message_filters::Subscriber<sensor_msgs::msg::PointCloud2> unknown_grid_sub_;
-    typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2> MySyncPolicy;
-    typedef message_filters::Synchronizer<MySyncPolicy> Sync;
-    std::shared_ptr<Sync> sync_;
+    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr occup_grid_sub_; // use this for single map callback
+    // message_filters::Subscriber<sensor_msgs::msg::PointCloud2> occup_grid_sub_;
+    // // message_filters::Subscriber<sensor_msgs::msg::PointCloud2> unknown_grid_sub_;
+    // typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2> MySyncPolicy;
+    // typedef message_filters::Synchronizer<MySyncPolicy> Sync;
+    // std::shared_ptr<Sync> sync_;
 };
 
 int main(int argc, char **argv)
