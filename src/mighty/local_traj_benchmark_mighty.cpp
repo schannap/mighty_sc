@@ -1074,7 +1074,7 @@ private:
 
                 std::string occ_identifier;
                 if (use_occ_cost_==true){
-                    occ_identifier = "with_occ_";
+                    occ_identifier = "with_occ";
                 }
                 else{
                     occ_identifier = "";
@@ -1202,11 +1202,205 @@ private:
             // loop over all the safety corridors from the saved files
             for (auto &r : results_)
             {
-                auto t0 = std::chrono::high_resolution_clock::now();
                 const std::string fname = fs::path(r.file).filename().string();
-                bool ok = solveMighty(r);
-                auto t1 = std::chrono::high_resolution_clock::now();
-                r.success = ok;
+                // -----------------------------
+                // 1. Load corridors
+                // -----------------------------
+                Vec3d start, goal;
+                vec_Vecf<3> path;
+                std::vector<double> seg_end_times;
+                vec_E<Polyhedron<3>> poly_out;
+                std::vector<LinearConstraint3D> l_constraints;
+
+                loadMysco2(
+                    fs::path(r.file),
+                    start,
+                    goal,
+                    path,
+                    seg_end_times,
+                    poly_out,
+                    l_constraints,
+                    poly_seed_eps_,
+                    debug_poly_check_);
+
+                r.start = start;
+                r.goal = goal;
+
+                // Cache corridor polyhedra for RViz
+                {
+                    auto msg = DecompROS::polyhedron_array_to_ros(poly_out);
+                    msg.header.frame_id = frame_id_;
+                    msg.header.stamp = now();
+                    msg.lifetime = rclcpp::Duration::from_seconds(1.0);
+                    r.poly_msg = msg;
+                }
+
+                // Global path marker array
+                {
+                    r.global_path_ma.markers.clear();
+                    vectorOfVectors2MarkerArray(path, &r.global_path_ma, color(RED));
+                }
+
+                auto maxViolation = [](const LinearConstraint3D &lc, const Vec3f &p) -> double
+                {
+                    if (lc.A_.rows() == 0)
+                        return 0.0;
+                    Eigen::VectorXd d = lc.A_ * p - lc.b_;
+                    return d.maxCoeff();
+                };
+
+                // Sanity
+                if (path.size() < 2 || l_constraints.size() != path.size() - 1)
+                {
+                    RCLCPP_ERROR(get_logger(), "Invalid corridor in %s", r.file.c_str());
+                    // return false;
+                }
+
+                const int num_seg = static_cast<int>(l_constraints.size());
+
+                if (num_seg > par_.num_N)
+                {
+                    r.success = false;
+                    r.status = "SKIP: polytopes(" + std::to_string(num_seg) +
+                                ") > num_N(" + std::to_string(par_.num_N) + ")";
+                    const auto t1 = steady_clock::now();
+                    r.total_opt_runtime_ms = 1000000.0;
+                    continue;
+                }
+
+                if (num_seg <= 0)
+                    throw std::runtime_error("No segments/constraints loaded.");
+
+                const Vec3f p_start = path.front();
+                const Vec3f p_goal = path.back();
+
+                const double v_start = maxViolation(l_constraints.front(), p_start);
+                const double v_goal = maxViolation(l_constraints.back(), p_goal);
+
+                int bad_mid_count = 0;
+                for (int i = 0; i < num_seg; ++i)
+                {
+                    const Vec3f mid = 0.5 * (path[i] + path[i + 1]);
+                    const double vm = maxViolation(l_constraints[i], mid);
+                    if (vm > 1e-6)
+                        bad_mid_count++;
+                }
+
+                // If start/goal/mids violate, skip
+                if (v_start > 1e-5 || v_goal > 1e-5 || bad_mid_count > 0)
+                {
+                    r.success = false;
+                    r.status = "BAD_CONSTRAINTS: start/goal/mid violates corridor (see logs)";
+                    const auto t1 = steady_clock::now();
+                    r.total_opt_runtime_ms = 1000000.0;
+                    continue;
+                }
+
+
+                // -----------------------------
+                // 2. Initial and goal states
+                // -----------------------------
+                state local_A, local_E;
+
+                local_A.setZero();
+                local_A.pos = start;
+
+                local_E.setZero();
+                local_E.pos = goal;
+
+                // -----------------------------
+                // 3. Create solver
+                // -----------------------------
+                auto solver = std::make_shared<lbfgs::SolverLBFGS>();
+                solver->initializeSolver(planner_params_);
+
+                // Set map to use if considering occlusions
+                solver->setUseOccCost(use_occ_cost_);
+                solver->setMapUtil(mighty_ptr_->getMapUtilShared().get());
+                auto map_util = mighty_ptr_->getMapUtilShared();
+
+                if (!map_util) {
+                RCLCPP_ERROR(get_logger(),
+                "MapUtil is null! Map callback has not run yet.");
+                }
+
+                std::vector<std::shared_ptr<dynTraj>> no_obstacles;
+
+                double initial_guess_time_ms = 0.0;
+
+                // -----------------------------
+                // 4. Prepare solver
+                // -----------------------------
+                solver->prepareSolverForReplan(
+                    /*t0=*/0.0,
+                    path,
+                    l_constraints,
+                    no_obstacles,
+                    local_A,
+                    local_E,
+                    initial_guess_time_ms,
+                    /*use_for_safe_path=*/false,
+                    /*use_multiple_initial_guesses=*/false);
+
+                
+                // -----------------------------
+                // 5. Optimize
+                // -----------------------------
+                auto list_z0 = solver->getInitialGuesses();
+                if (list_z0.empty())
+                {
+                    RCLCPP_ERROR(get_logger(), "No initial guess for %s", r.file.c_str());
+                    // return false;
+                }
+
+                Eigen::VectorXd zopt_;
+                double fopt_ = 0.0;
+
+                lbfgs::lbfgs_parameter_t lbfgs_params;
+                lbfgs_params.mem_size = 256;
+
+                auto t0 = std::chrono::steady_clock::now();
+                int status = solver->optimize(list_z0[0], zopt_, fopt_, lbfgs_params);
+                auto t1 = std::chrono::steady_clock::now();
+                double solve_time_ms =
+                    std::chrono::duration<double, std::milli>(t1 - t0).count();
+                r.per_opt_runtime_ms = solve_time_ms;
+
+                if (status < 0 || fopt_ > par_.fopt_threshold)
+                {
+                    r.success = false;
+                    r.status = "opt_failed";
+                    RCLCPP_ERROR(get_logger(),
+                                "Optimization failed (%s): status=%d fopt=%.3f",
+                                r.file.c_str(), status, fopt_);
+                }
+                
+                else {
+                    // -----------------------------
+                    // 6. Extract trajectory
+                    // -----------------------------
+                    solver->reconstructPVATCPopt(zopt_);
+                    std::vector<state> goal_setpoints;
+                    solver->getGoalSetpoints(goal_setpoints);
+
+                    const auto crep = analyzeConstraintsSampled(
+                                        goal_setpoints, l_constraints, par_.dc,
+                                        par_.v_max, par_.a_max, par_.j_max);
+                    applyConstraintReport(r, crep);
+
+                    r.opt_traj_ma = stateVector2ColoredMarkerArray(goal_setpoints, /*type=*/1, par_.v_max, this->now());
+                    r.success = true;
+                    r.status = "success";
+                    r.cost_value = fopt_;
+                    maybeDumpTrajectory(fname, goal_setpoints, r);
+                    // return true;
+
+                    // auto t0 = std::chrono::high_resolution_clock::now();
+                    // const std::string fname = fs::path(r.file).filename().string();
+                    // bool ok = solveMighty(r);
+                    // auto t1 = std::chrono::high_resolution_clock::now();
+                    // r.success = ok;
+                }
             }
 
         }
@@ -1426,167 +1620,8 @@ private:
     // this is for a single corridor
     bool solveMighty(BenchResult &r)
     {
-        // -----------------------------
-        // 1. Load corridors
-        // -----------------------------
-        Vec3d start, goal;
-        vec_Vecf<3> path;
-        std::vector<double> seg_end_times;
-        vec_E<Polyhedron<3>> poly_out;
-        std::vector<LinearConstraint3D> l_constraints;
+        
 
-        loadMysco2(
-            fs::path(r.file),
-            start,
-            goal,
-            path,
-            seg_end_times,
-            poly_out,
-            l_constraints,
-            poly_seed_eps_,
-            debug_poly_check_);
-
-        const std::string fname = fs::path(r.file).filename().string();
-
-        // Cache corridor polyhedra for RViz
-        {
-            auto msg = DecompROS::polyhedron_array_to_ros(poly_out);
-            msg.header.frame_id = frame_id_;
-            msg.header.stamp = now();
-            msg.lifetime = rclcpp::Duration::from_seconds(1.0);
-            r.poly_msg = msg;
-        }
-
-        // Global path marker array
-        {
-            r.global_path_ma.markers.clear();
-            vectorOfVectors2MarkerArray(path, &r.global_path_ma, color(RED));
-        }
-
-        // Sanity
-        if (path.size() < 2 || l_constraints.size() != path.size() - 1)
-        {
-            RCLCPP_ERROR(get_logger(), "Invalid corridor in %s", r.file.c_str());
-            return false;
-        }
-
-        // -----------------------------
-        // 2. Initial and goal states
-        // -----------------------------
-        state local_A, local_E;
-
-        local_A.setZero();
-        local_A.pos = start;
-
-        local_E.setZero();
-        local_E.pos = goal;
-
-        // -----------------------------
-        // 3. Create solver
-        // -----------------------------
-        auto solver = std::make_shared<lbfgs::SolverLBFGS>();
-        solver->initializeSolver(planner_params_);
-        solver->setUseOccCost(use_occ_cost_);
-        // RCLCPP_INFO(get_logger(), "Use occlusion cost %d: ", use_occ_cost_);
-        solver->setMapUtil(mighty_ptr_->getMapUtilShared().get());
-        auto map_util = mighty_ptr_->getMapUtilShared();
-
-        if (!map_util) {
-        RCLCPP_ERROR(get_logger(),
-        "MapUtil is null! Map callback has not run yet.");
-        }
-        // RCLCPP_INFO(get_logger(), "reached 1433");
-
-        std::vector<std::shared_ptr<dynTraj>> no_obstacles;
-
-        double initial_guess_time_ms = 0.0;
-
-        // -----------------------------
-        // 4. Prepare solver
-        // -----------------------------
-        solver->prepareSolverForReplan(
-            /*t0=*/0.0,
-            path,
-            l_constraints,
-            no_obstacles,
-            local_A,
-            local_E,
-            initial_guess_time_ms,
-            /*use_for_safe_path=*/false,
-            /*use_multiple_initial_guesses=*/false);
-
-        // -----------------------------
-        // 5. Optimize
-        // -----------------------------
-        auto list_z0 = solver->getInitialGuesses();
-        if (list_z0.empty())
-        {
-            RCLCPP_ERROR(get_logger(), "No initial guess for %s", r.file.c_str());
-            return false;
-        }
-
-        Eigen::VectorXd zopt_;
-        double fopt_ = 0.0;
-
-        lbfgs::lbfgs_parameter_t lbfgs_params;
-        lbfgs_params.mem_size = 256;
-
-        auto t0 = std::chrono::high_resolution_clock::now();
-        // RCLCPP_INFO(get_logger(), "reached 1470");
-
-        int status = solver->optimize(list_z0[0], zopt_, fopt_, lbfgs_params);
-        // RCLCPP_INFO(get_logger(), "reached 1473");
-        auto t1 = std::chrono::high_resolution_clock::now();
-
-        double solve_time_ms =
-            std::chrono::duration<double, std::milli>(t1 - t0).count();
-
-        if (status < 0 || fopt_ > par_.fopt_threshold)
-        {
-            if (status < 0){
-            RCLCPP_ERROR(get_logger(),
-                        "Optimization failed due to status < 0 (%s): status=%d fopt=%.3f",
-                        r.file.c_str(), status, fopt_);                
-            }
-
-            if (fopt_ > par_.fopt_threshold){
-            RCLCPP_ERROR(get_logger(),
-                        "Optimization failed due to high fopt(%s): status=%d fopt=%.3f, fopt_threshold=%.3f",
-                        r.file.c_str(), status, fopt_, par_.fopt_threshold);
-            }
-            r.success = false;
-            r.status = "opt_failed";
-            RCLCPP_ERROR(get_logger(),
-                        "Optimization failed (%s): status=%d fopt=%.3f",
-                        r.file.c_str(), status, fopt_);
-            return false;
-        }
-        // RCLCPP_INFO(get_logger(),
-        //                 "Optimization success (%s): status=%d fopt=%.3f",
-        //                 r.file.c_str(), status, fopt_);
-  
-
-        // -----------------------------
-        // 6. Extract trajectory
-        // -----------------------------
-        solver->reconstructPVATCPopt(zopt_);
-        std::vector<state> goal_setpoints;
-        solver->getGoalSetpoints(goal_setpoints);
-
-        const auto crep = analyzeConstraintsSampled(
-                            goal_setpoints, l_constraints, par_.dc,
-                            par_.v_max, par_.a_max, par_.j_max);
-        applyConstraintReport(r, crep);
-
-        r.opt_traj_ma = stateVector2ColoredMarkerArray(goal_setpoints, /*type=*/1, par_.v_max, this->now());
-        r.success = true;
-        r.status = "success";
-
-        maybeDumpTrajectory(fname, goal_setpoints, r);
-        r.start = start;
-        r.goal  = goal;
-
-        return true;
     }
 
     void writeCsv() const

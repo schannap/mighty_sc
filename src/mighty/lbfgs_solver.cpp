@@ -2651,8 +2651,10 @@ double SolverLBFGS::evaluateObjectiveAndGradientFused(const Eigen::VectorXd &z, 
                 {
                     // Check if there is an occlusion at the current position
                     // TODO: can work towards fixing the functions input type to match x without casting
-                    auto occlusion = map_util_->detectOcclusionAt( x, map_util_->getRes(), 6);
+                    auto occlusion = map_util_->detectOcclusionAt( x, map_util_->getRes(), 1);
+                    // std::cout << "checking for occlusions";
                     if (occlusion.is_occlusion){
+                        std::cout << "there was an occlusion detected";
                         double cos_sim = occlusion.normal.cast<double>().normalized().dot(v.cast<double>().normalized());
                         J_occ += cos_sim;
                     }
