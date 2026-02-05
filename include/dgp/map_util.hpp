@@ -133,6 +133,110 @@ namespace mighty
     }
 
 
+    // assume Vec3f is Eigen::Vector3f and Vec3i is Eigen::Vector3i
+    void readMap(
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud, 
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& unk_cloud,
+        int cells_x, int cells_y, int cells_z,
+        const Vec3f &center_map,
+        double z_ground,
+        double z_max,
+        double inflation)
+    {
+      // 1) Compute X/Y dims with inflation pad
+      int pad = int(std::ceil(5.0 * inflation / res_));
+      int dimX = cells_x + pad, dimY = cells_y + pad, dimZ = cells_z;
+
+      // 2) Compute how many cells below/above center we keep,
+      //    strictly within [z_ground, z_max]
+      int halfZ = dimZ / 2;
+      int down = halfZ, up = halfZ;
+      // world coords of bottom slice:
+      float bot = center_map.z() - halfZ * res_;
+      if (bot < z_ground)
+        down = std::max(int(std::floor((center_map.z() - z_ground) / res_)), 0);
+      // top slice:
+      float top = center_map.z() + halfZ * res_;
+      if (top > z_max)
+        up = std::max(int(std::floor((z_max - center_map.z()) / res_)), 1);
+      dimZ = down + up;
+
+      // 3) Compute origin (global coords of cell (0,0,0)) and clamp it
+      Vec3f origin;
+      origin.x() = center_map.x() - (dimX * res_) / 2.0f;
+      origin.y() = center_map.y() - (dimY * res_) / 2.0f;
+      origin.z() = center_map.z() - down * res_;
+      // ensure origin.z >= z_ground and origin.z+dimZ*res <= z_max
+      origin.z() = std::clamp(origin.z(),
+                              z_ground,
+                              z_max - dimZ * res_);
+
+      // 4) Allocate map and fill as free
+      size_t total = size_t(dimX) * dimY * dimZ;
+      map_.assign(total, val_free_);
+
+      // 5) Helpers for clamping & indexing
+      auto clamp_idx = [&](int v, int M)
+      { return std::clamp(v, 0, M - 1); };
+      auto idx3 = [&](int x, int y, int z)
+      {
+        return size_t(x) + size_t(dimX) * y + size_t(dimX) * size_t(dimY) * z;
+      };
+
+      // 6) Fill the unknown voxels
+      #pragma omp parallel for schedule(dynamic)
+      for (size_t i = 0; i < unk_cloud->points.size(); ++i)
+      {
+        const auto &P = unk_cloud->points[i];
+        if (P.z < z_ground || P.z > z_max)
+          continue;
+        int xi = clamp_idx(int(std::floor((P.x - origin.x()) / res_)), dimX);
+        int yi = clamp_idx(int(std::floor((P.y - origin.y()) / res_)), dimY);
+        int zi = clamp_idx(int(std::floor((P.z - origin.z()) / res_)), dimZ);
+
+        // mark unknown
+        map_[idx3(xi, yi, zi)] = val_unknown_;
+      }
+
+      // 7) Precompute inflation offsets
+      int m = int(std::floor(inflation / res_));
+      std::vector<Vec3i> offsets;
+      offsets.reserve((2 * m + 1) * (2 * m + 1) * (2 * m + 1));
+      for (int dx = -m; dx <= m; ++dx)
+        for (int dy = -m; dy <= m; ++dy)
+          for (int dz = -m; dz <= m; ++dz)
+            offsets.emplace_back(dx, dy, dz);
+
+      // 8) Rasterize & inflate, skipping points outside z-bounds
+      #pragma omp parallel for schedule(dynamic)
+      for (size_t i = 0; i < cloud->points.size(); ++i)
+      {
+        const auto &P = cloud->points[i];
+        if (P.z < z_ground || P.z > z_max)
+          continue;
+        int xi = clamp_idx(int(std::floor((P.x - origin.x()) / res_)), dimX);
+        int yi = clamp_idx(int(std::floor((P.y - origin.y()) / res_)), dimY);
+        int zi = clamp_idx(int(std::floor((P.z - origin.z()) / res_)), dimZ);
+
+        // mark occupied
+        map_[idx3(xi, yi, zi)] = val_occ_;
+        // inflate neighborhood
+        for (auto &off : offsets)
+        {
+          int x2 = xi + off.x(), y2 = yi + off.y(), z2 = zi + off.z();
+          if (x2 < 0 || x2 >= dimX || y2 < 0 || y2 >= dimY || z2 < 0 || z2 >= dimZ)
+            continue;
+          map_[idx3(x2, y2, z2)] = val_occ_;
+        }
+      }
+
+      // 9) Update metadata
+      dim_ = Veci<3>(dimX, dimY, dimZ);
+      total_size_ = total;
+      origin_d_ = origin;
+      center_map_ = center_map;
+    }
+
     // Pre-compute inflation
     // Precompute offsets for inflation
     vec_Veci<3> computeInflationOffsets(const Veci<3> &inflation_cells)

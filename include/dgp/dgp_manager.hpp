@@ -47,6 +47,7 @@ public:
     void getOccupiedCellsForCvxDecomp(vec_Vecf<3> &occupied_cells, const vec_Vecf<3> &path, bool use_for_safe_path);
     void getDynamicOccupiedCellsForVis(vec_Vecf<3> &occupied_cells, vec_Vecf<3> &free_cells, vec_Vecf<3> &unknown_cells, double current_time);
     void updateMap(double wdx, double wdy, double wdz, const Vec3f &center_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& pclptr);
+    void updateMap(double wdx, double wdy, double wdz, const Vec3f &center_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &unk_cloud);
     void freeStart(Vec3f &start_sent, double factor);
     void freeGoal(Vec3f &goal_sent, double factor);
     bool checkIfPointOccupied(const Vec3f &point);
