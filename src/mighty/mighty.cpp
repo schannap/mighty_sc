@@ -1630,7 +1630,7 @@ void MIGHTY::updateMap(
   computeMapSize(local_state.pos, local_G.pos);
 
   // 2) map update (unlocked)
-  dgp_manager_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_);
+  dgp_manager_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_, pclptr_unk_); // changed to add the unknown cloud
 
   // 3) Known‐space KD‐tree
   if (pclptr_map_ && !pclptr_map_->points.empty())

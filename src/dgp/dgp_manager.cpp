@@ -434,6 +434,27 @@ void DGPManager::updateMap(double wdx, double wdy, double wdz, const Vec3f &cent
     }
 }
 
+void DGPManager::updateMap(double wdx, double wdy, double wdz, const Vec3f &center_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &unk_cloud)
+{
+
+    // Get the current time to see the computation time for readmap
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    mtx_map_util_.lock();
+    map_util_->readMap(pclptr, unk_cloud, (int)wdx / res_, (int)wdy / res_, (int)wdz / res_, center_map, par_.z_min, par_.z_max, par_.inflation_dgp); // Map read
+    mtx_map_util_.unlock();
+
+    // Get the elapsed time for reading the map
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    // std::cout << "Map read time: " << elapsed_time << " ms" << std::endl;
+
+    if (!map_initialized_)
+    {
+        map_initialized_ = true;
+    }
+}
+
 bool DGPManager::isMapInitialized() const
 {
     return map_initialized_;
