@@ -8,28 +8,24 @@ windows:
       - source /home/kkondo/code/decomp_ws/install/setup.bash
     panes:
 
-      # # base station
-      # - shell_command:
-      #   - source /usr/share/gazebo/setup.bash
-      #   - ros2 launch mighty base_mighty.launch.py use_dyn_obs:=false use_gazebo_gui:=false use_rviz:=true env:=hard_forest
-     
-
-      # # ACL mapper
-      # - shell_command:
-      #   - sleep 10
-      #   - ros2 launch global_mapper_ros global_mapper_node.launch.py
-
-      # # onboard agent NX01
-      # - shell_command:
-      #   - sleep 10
-      #   - ros2 launch mighty onboard_mighty.launch.py x:=0.0 y:=0.0 z:=3.0 yaw:=1.57
-      
       # base station
       - shell_command:
-        - ros2 launch mighty simulator.launch.py
+        - source /usr/share/gazebo/setup.bash
+        - ros2 launch mighty base_mighty.launch.py use_dyn_obs:=false use_gazebo_gui:=false use_rviz:=true env:=hard_forest
+     
+
+      # ACL mapper
+      - shell_command:
+        - sleep 10
+        - ros2 launch global_mapper_ros global_mapper_node.launch.py
+
+      # onboard agent NX01
+      - shell_command:
+        - sleep 10
+        - ros2 launch mighty onboard_mighty.launch.py x:=-4.0 y:=0.0 z:=1.0 yaw:=1.57
 
       # run SFC generator
       - shell_command:
-        - sleep 5
-        - ros2 run mighty corridor_generator_node --ros-args -p max_dist_vertexes:=6.0 
+        - sleep 20
+        - ros2 run mighty corridor_generator_node --ros-args -p max_dist_vertexes:=6.0 -p start:="[-4.0, 0.0, 1.0]"
         #map_topic:="/NX01/occupancy_grid"
