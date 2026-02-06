@@ -931,27 +931,22 @@ public:
 
         // Create map subscription (static map)
         // Synchronize the occupancy grid and unknown grid
-        // this->cb_group_map_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-        // rclcpp::SubscriptionOptions options_map;
-        // options_map.callback_group = this->cb_group_map_;
-        // occup_grid_sub_.subscribe(this, "occupancy_grid", rmw_qos_profile_sensor_data, options_map);
-        // unknown_grid_sub_.subscribe(this, "unknown_grid", rmw_qos_profile_sensor_data, options_map);
-        // sync_.reset(new Sync(MySyncPolicy(10), occup_grid_sub_, unknown_grid_sub_));
-        // sync_->registerCallback(std::bind(&LocalTrajBenchmarkNode::mapCallback, this, std::placeholders::_1, std::placeholders::_2));
-        
-        this->cb_group_map_ =
-        this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-
+        this->cb_group_map_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
         rclcpp::SubscriptionOptions options_map;
         options_map.callback_group = this->cb_group_map_;
-
-        occup_grid_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-            "/map_generator/global_cloud",
-            rclcpp::SensorDataQoS(),
-            std::bind(&LocalTrajBenchmarkNode::singleMapCallback,
-                    this,
-                    std::placeholders::_1),
-            options_map);
+        occup_grid_sub_.subscribe(this, "occupancy_grid", rmw_qos_profile_sensor_data, options_map);
+        unknown_grid_sub_.subscribe(this, "unknown_grid", rmw_qos_profile_sensor_data, options_map);
+        sync_.reset(new Sync(MySyncPolicy(10), occup_grid_sub_, unknown_grid_sub_));
+        sync_->registerCallback(std::bind(&LocalTrajBenchmarkNode::mapCallback, this, std::placeholders::_1, std::placeholders::_2));
+        
+  
+        // occup_grid_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+        //     "/map_generator/global_cloud",
+        //     rclcpp::SensorDataQoS(),
+        //     std::bind(&LocalTrajBenchmarkNode::singleMapCallback,
+        //             this,
+        //             std::placeholders::_1),
+        //     options_map);
 
         // To run the planning/solving
         planning_timer_ = create_wall_timer(
@@ -980,6 +975,14 @@ private:
         // create an empty unknown map
         pcl::PointCloud<pcl::PointXYZ>::Ptr unk_pc(new pcl::PointCloud<pcl::PointXYZ>());
         unk_pc->header = map_pc->header;
+
+        // // Fake free space: reuse map_pc but shrink it
+        // pcl::PointCloud<pcl::PointXYZ>::Ptr free_pc(new pcl::PointCloud<pcl::PointXYZ>());
+        // for (auto &p : map_pc->points)
+        // {
+        // if (p.z < 3.0 + 0.5) continue; // robot init pose is z = 3?
+        // free_pc->points.push_back(p);
+        // }
 
         RCLCPP_INFO(get_logger(), "going to update map.");
         mighty_ptr_->updateMap(map_pc, unk_pc);
@@ -1318,6 +1321,27 @@ private:
                 solver->setUseOccCost(use_occ_cost_);
                 solver->setMapUtil(mighty_ptr_->getMapUtilShared().get());
                 auto map_util = mighty_ptr_->getMapUtilShared();
+                
+                // const Veci<3>& dim = mighty_ptr_->dgp_manager_.map_util_->getDim();
+                // const Vecf<3>& center = mighty_ptr_->dgp_manager_.map_util_->getOrigin();
+                // Try to set some parts of the map free?
+                // Vec3f center = mighty_ptr_->map_center_;
+                // int ix_max = static_cast<int>(mighty_ptr_->wdx_);
+                // int iy_max = static_cast<int>(mighty_ptr_->wdy_);
+                // int iz_max = static_cast<int>(mighty_ptr_->wdz_);
+
+                // for (int x = 0; x < dim[0]/2; ++x)
+                //     for (int y = 0; y < dim[1]/2; ++y)
+                //     for (int z = 0; z < dim[2]/2; ++z)
+                //     {
+                //         // Vec3f p = indexToWorld(x,y,z);
+                //         // if ((p - center).norm() < 1.0) // radius of 1.0
+                //         // {
+                //         // if (map_util[idx3(x,y,z)] == -1) // unknown
+                //         //     map_util[idx3(x,y,z)] = 0; // free
+                //         // }
+                //     }
+
 
                 if (!map_util) {
                 RCLCPP_ERROR(get_logger(),
@@ -1612,6 +1636,7 @@ private:
         use_occ_cost_ = this->get_parameter("use_occ_cost").as_bool();
         RCLCPP_INFO(get_logger(), "useing occ cost %d", use_occ_cost_);
         mighty_ptr_ = std::make_shared<MIGHTY>(par_);
+        dgp_manager_.setParameters(par_);
     }
     
 
@@ -1782,6 +1807,11 @@ private:
 
     // For map
     std::shared_ptr<MIGHTY> mighty_ptr_;
+    DGPManager dgp_manager_;
+    // double wdx_; 
+    // double wdy_; 
+    // double wdz_; 
+    // Vec3f map_center_
     std::mutex map_mutex_;
     bool use_occ_cost_;
     bool solvers_initialized_{false};
@@ -1791,12 +1821,12 @@ private:
     // std::shared_ptr<mighty::VoxelMapUtil> map_util;
     rclcpp::CallbackGroup::SharedPtr cb_group_map_;
     // Time synchronizer
-    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr occup_grid_sub_; // use this for single map callback
-    // message_filters::Subscriber<sensor_msgs::msg::PointCloud2> occup_grid_sub_;
-    // // message_filters::Subscriber<sensor_msgs::msg::PointCloud2> unknown_grid_sub_;
-    // typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2> MySyncPolicy;
-    // typedef message_filters::Synchronizer<MySyncPolicy> Sync;
-    // std::shared_ptr<Sync> sync_;
+    // rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr occup_grid_sub_; // use this for single map callback
+    message_filters::Subscriber<sensor_msgs::msg::PointCloud2> occup_grid_sub_;
+    message_filters::Subscriber<sensor_msgs::msg::PointCloud2> unknown_grid_sub_;
+    typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::PointCloud2, sensor_msgs::msg::PointCloud2> MySyncPolicy;
+    typedef message_filters::Synchronizer<MySyncPolicy> Sync;
+    std::shared_ptr<Sync> sync_;
 };
 
 int main(int argc, char **argv)
