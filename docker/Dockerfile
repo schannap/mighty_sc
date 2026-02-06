@@ -59,6 +59,7 @@ RUN git clone https://github.com/kotakondo/realsense_gazebo_plugin.git
 RUN git clone https://github.com/kotakondo/livox_laser_simulation_ros2.git
 RUN git clone https://github.com/kotakondo/gazebo_ros_pkgs.git
 RUN git clone https://gitlab.com/mit-acl/lab/acl-mapping.git
+RUN git clone https://github.com/kotakondo/uav_simulator.git
 WORKDIR /home/kkondo/code/mighty_ws/src/acl-mapping
 RUN git switch ros2
 RUN mkdir -p /home/kkondo/code/decomp_ws/src
