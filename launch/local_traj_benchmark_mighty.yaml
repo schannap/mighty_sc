@@ -15,12 +15,12 @@ windows:
       # ACL mapper
       - shell_command:
         - sleep 10
-        - ros2 launch global_mapper_ros global_mapper_node.launch.py
+        - ros2 launch global_mapper_ros global_mapper_node.launch.py world_dimensions:="[30.0, 30.0, 10.0]"
 
       # onboard agent NX01
       - shell_command:
         - sleep 10
-        - ros2 launch mighty onboard_mighty.launch.py x:=-4.0 y:=0.0 z:=1.0 yaw:=1.57
+        - ros2 launch mighty onboard_mighty.launch.py x:=0.0 y:=0.0 z:=1.0 yaw:=1.57 initial_wdx:=30.0 initial_wdy:=30.0 initial_wdz:=10.0
 
       - shell_command:
         - sleep 20
