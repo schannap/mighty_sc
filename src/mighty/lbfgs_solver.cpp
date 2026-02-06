@@ -2647,14 +2647,12 @@ double SolverLBFGS::evaluateObjectiveAndGradientFused(const Eigen::VectorXd &z, 
                         gT_samp += -40.0 * ga_phys.dot(d2) * invT3;
                     }
                 }
+
                 if (use_occ_cost_ == true)
                 {
                     // Check if there is an occlusion at the current position
-                    // TODO: can work towards fixing the functions input type to match x without casting
-                    auto occlusion = map_util_->detectOcclusionAt( x, map_util_->getRes(), 1);
-                    // std::cout << "checking for occlusions";
+                    auto occlusion = map_util_->detectOcclusionAt( x, map_util_->getRes(), 3); //change number here
                     if (occlusion.is_occlusion){
-                        std::cout << "there was an occlusion detected";
                         double cos_sim = occlusion.normal.cast<double>().normalized().dot(v.cast<double>().normalized());
                         J_occ += cos_sim;
                     }
@@ -2881,7 +2879,7 @@ double SolverLBFGS::evaluateObjectiveAndGradientFused(const Eigen::VectorXd &z, 
         dyn_constr_bodyrate_weight_ * J_om +
         dyn_constr_tilt_weight_ * J_tilt +
         dyn_constr_thrust_weight_ * J_thr +
-        -0.5 * J_occ;
+        occ_weight_ * J_occ;
 
     return f;
 }

@@ -258,7 +258,7 @@ public:
         goals_.clear();
         for (double y = -5.0; y <= 5.0 + 1e-3; y += 0.1)
         {
-            goals_.emplace_back(6.0, y, 1.0); // changes x from 4.0 to 6.0
+            goals_.emplace_back(8.0, y, 1.0); // changes x from 4.0 to 8.0
         }
         if (goals_.empty())
         {
