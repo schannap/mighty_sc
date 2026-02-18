@@ -2860,10 +2860,10 @@ double SolverLBFGS::evaluateObjectiveAndGradientFused(const Eigen::VectorXd &z, 
         grad[K_cp_ + s] += time_weight_ * dTdtau; // time term gradient
     }
 
-    // Set the J_occ to 0 if not using that cost term
-    if (use_occ_cost_ == false){
-        J_occ = 0.0;
-    }
+    // // Set the J_occ to 0 if not using that cost term
+    // if (use_occ_cost_ == false){
+    //     J_occ = 0.0;
+    // }
     // -------------------------------------------------------------------------
     // Final weighted objective (mirrors lbfgs evaluateObjective)
     // -------------------------------------------------------------------------

@@ -93,6 +93,20 @@ add_executable(test_occlusion_noviz src/test/test_occlusion_noviz.cpp)
 ament_target_dependencies(test_occlusion_noviz Eigen3)
 target_link_libraries(test_occlusion_noviz OpenMP::OpenMP_CXX ${PCL_LIBRARIES})
 
+# For benchmarking comparison
+add_executable(plot_comparisons
+  src/mighty/plot_comparisons.cpp)
+ament_target_dependencies(plot_comparisons
+  rclcpp
+  visualization_msgs
+  geometry_msgs)
+
+# For visualizing occlusions
+add_executable(plot_occlusions
+  src/mighty/determine_post_occlusions.cpp src/mighty/mighty.cpp src/dgp/dgp_manager.cpp src/dgp/utils.cpp src/dgp/dgp_planner.cpp src/dgp/graph_search.cpp src/mighty/utils.cpp src/mighty/lbfgs_solver.cpp src/mighty/lbfgs_solver_utils.cpp)
+target_link_libraries(plot_occlusions  Eigen3::Eigen ${PCL_LIBRARIES})
+ament_target_dependencies(plot_occlusions rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs tf2 tf2_ros tf2_eigen std_srvs pcl_ros)
+
 
 # Add the convert velodyne executable
 add_executable(convert_velodyne_to_ros_time src/mighty/convert_velodyne_to_ros_time.cpp)
@@ -164,6 +178,14 @@ install(TARGETS
 # )
 install(TARGETS
   test_occlusion_noviz
+  DESTINATION lib/${PROJECT_NAME})
+
+install(TARGETS
+  plot_comparisons
+  DESTINATION lib/${PROJECT_NAME})
+
+install(TARGETS
+  plot_occlusions
   DESTINATION lib/${PROJECT_NAME})
 
 # install for libraries

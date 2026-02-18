@@ -198,6 +198,7 @@ public:
         // declare_parameter<std::string>("map_topic", "/map_generator/global_cloud");
         declare_parameter<std::string>("map_topic", "/NX01/occupancy_grid");
         declare_parameter<std::vector<double>>("start", {0.0, 0.0, 3.0});
+        declare_parameter<double>("goal_x", 8.0);
 
         // Map window to read into VoxelMapUtil (make this cover all your goals for fairness)
         declare_parameter<std::vector<double>>("map_center", {0.0, 0.0, 1.0});
@@ -248,17 +249,17 @@ public:
         declare_parameter<std::string>("ellip_topic", "/mighty/sfc_ellip");
         declare_parameter<bool>("keep_alive", true);            // keep node running for RViz
         declare_parameter<double>("republish_period_sec", 1.0); // 0 disables periodic republish
-
+        
         // Read parameters
         map_topic_ = get_parameter("map_topic").as_string();
         output_dir_ = get_parameter("output_dir").as_string();
         output_prefix_ = get_parameter("output_prefix").as_string();
-
+        double goal_x_ = get_parameter("goal_x").as_double();
         start_ = vec3FromStd(get_parameter("start").as_double_array(), "start");
         goals_.clear();
         for (double y = -5.0; y <= 5.0 + 1e-3; y += 0.1)
         {
-            goals_.emplace_back(8.0, y, 1.0); // changes x from 4.0 to 8.0
+            goals_.emplace_back(goal_x_, y, start_[2]); // changes x from 4.0 to 8.0
         }
         if (goals_.empty())
         {
