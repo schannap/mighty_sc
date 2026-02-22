@@ -107,6 +107,12 @@ add_executable(plot_occlusions
 target_link_libraries(plot_occlusions  Eigen3::Eigen ${PCL_LIBRARIES})
 ament_target_dependencies(plot_occlusions rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs tf2 tf2_ros tf2_eigen std_srvs pcl_ros)
 
+# For analyzing benchmarking results
+add_executable(occlusion_analysis
+  src/mighty/analyze_info_gain.cpp src/mighty/mighty.cpp src/dgp/dgp_manager.cpp src/dgp/utils.cpp src/dgp/dgp_planner.cpp src/dgp/graph_search.cpp src/mighty/utils.cpp src/mighty/lbfgs_solver.cpp src/mighty/lbfgs_solver_utils.cpp)
+target_link_libraries(occlusion_analysis  Eigen3::Eigen ${PCL_LIBRARIES})
+ament_target_dependencies(occlusion_analysis rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs tf2 tf2_ros tf2_eigen std_srvs pcl_ros)
+
 
 # Add the convert velodyne executable
 add_executable(convert_velodyne_to_ros_time src/mighty/convert_velodyne_to_ros_time.cpp)
@@ -186,6 +192,10 @@ install(TARGETS
 
 install(TARGETS
   plot_occlusions
+  DESTINATION lib/${PROJECT_NAME})
+
+install(TARGETS
+  occlusion_analysis
   DESTINATION lib/${PROJECT_NAME})
 
 # install for libraries
