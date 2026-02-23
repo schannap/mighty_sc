@@ -47,6 +47,8 @@
 #include "dynus_interfaces/msg/pn_adaptation.hpp"
 
 #include <iomanip>
+#include <cstddef> // Required for size_t
+#include <cmath> // Required for atan()
 
 namespace fs = std::filesystem;
 using namespace mighty;
@@ -61,6 +63,29 @@ struct TrajPoint
     double jx, jy, jz;
 };
 
+using GlobalVoxel = Eigen::Vector3i;
+struct GlobalVoxelHash
+{
+  std::size_t operator()(const GlobalVoxel& v) const noexcept
+  {
+    std::size_t hx = std::hash<int>()(v.x());
+    std::size_t hy = std::hash<int>()(v.y());
+    std::size_t hz = std::hash<int>()(v.z());
+
+    return hx ^ (hy << 1) ^ (hz << 2);
+  }
+};
+
+struct GlobalVoxelEqual
+{
+  bool operator()(const GlobalVoxel& a,
+                  const GlobalVoxel& b) const noexcept
+  {
+    return a.x() == b.x() &&
+           a.y() == b.y() &&
+           a.z() == b.z();
+  }
+};
 
 class OcclusionAnalysisNode final : public rclcpp::Node
 {
@@ -180,7 +205,7 @@ public:
         this->declare_parameter<double>("min_wdx", 30.0);
         this->declare_parameter<double>("min_wdy", 30.0);
         this->declare_parameter<double>("min_wdz", 3.0);
-        this->declare_parameter<double>("mighty_map_res", 0.2);
+        this->declare_parameter<double>("mighty_map_res", 0.15);
 
         // ---------------- Comm delay ----------------
         this->declare_parameter<bool>("use_comm_delay_inflation", false);
@@ -460,14 +485,19 @@ public:
                       std::placeholders::_1,
                       std::placeholders::_2));
 
-        planning_timer_ = create_wall_timer(
-            std::chrono::milliseconds(200),
-            std::bind(&OcclusionAnalysisNode::process, this),
-            cb_group_map_);
+        // planning_timer_ = create_wall_timer(
+        //     std::chrono::milliseconds(200),
+        //     std::bind(&OcclusionAnalysisNode::process, this),
+        //     cb_group_map_);
 
         control_timer_ = this->create_wall_timer(
             std::chrono::milliseconds(10),
             std::bind(&OcclusionAnalysisNode::controlTimerCallback, this));
+
+        compare_timer_ = this->create_wall_timer(
+            std::chrono::milliseconds(10),
+            std::bind(&OcclusionAnalysisNode::compareTimerCallback, this));
+
 
     }
 
@@ -625,57 +655,11 @@ private:
         }
 
         // evaluateExplorationProgress(unk_pc);
-        evaluateExplorationProgress(map_pc);
+        // evaluateExplorationProgress(map_pc);
 
-        // map_ready_ = true;
+        map_ready_ = true;
         // RCLCPP_INFO(get_logger(), "Map received and stored.");
     }
-
-    // void evaluateExplorationProgress(pcl::PointCloud<pcl::PointXYZ>::Ptr current_unknown)
-    // {
-    //     pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
-    //     kdtree.setInputCloud(current_unknown);
-
-    //     int still_unknown = 0;
-    //     const float tolerance = 0.05;  // 5 cm tolerance
-
-    //     for (const auto& pt : initial_unknown_pc_->points)
-    //     {
-    //         std::vector<int> indices;
-    //         std::vector<float> sq_dists;
-
-    //         if (kdtree.radiusSearch(pt, tolerance, indices, sq_dists) > 0)
-    //         {
-    //             still_unknown++;
-    //         }
-    //     }
-
-    //     int total_initial = initial_unknown_pc_->size();
-    //     int converted = total_initial - still_unknown;
-
-    //     // RCLCPP_INFO(get_logger(),
-    //     //     "Converted %d / %d initial unknown points",
-    //     //     converted, total_initial);
-
-    //     // exploration_progress_.push_back(converted);
-
-    //     size_t time_index =
-    //         std::min(current_index_ - 1, trajectory_.size() - 1);
-
-    //     double traj_time = trajectory_[time_index].t;
-
-    //     progress_time_.push_back(traj_time);
-    //     progress_converted_.push_back(converted);
-
-    //     double percent_remaining =
-    //         (double)converted / total_initial;
-    //     progress_file_ << traj_time << ","
-    //                 << percent_remaining << "\n";
-
-    //     RCLCPP_INFO(get_logger(),
-    //         "[t = %.3f] Converted %d / %d initial unknown points",
-    //         traj_time, converted, total_initial);
-    // }
 
     void evaluateExplorationProgress(pcl::PointCloud<pcl::PointXYZ>::Ptr current_free)
     {
@@ -731,160 +715,97 @@ private:
             traj_time, converted, total_region);
     }
 
-
-    // ===============================
-    // PROCESS AFTER MAP IS READY
-    // ===============================
-    void process()
+    // HELPER FUNCTION
+    inline GlobalVoxel worldToGlobalVoxel(const Vec3f& pt) const
     {
-        return;
-        if (!map_ready_ || visualized_)
-            return;
+    return GlobalVoxel(
+        static_cast<int>(std::floor(pt.x() / res_)),
+        static_cast<int>(std::floor(pt.y() / res_)),
+        static_cast<int>(std::floor(pt.z() / res_))
+    );
+    }
 
+    void compareTimerCallback(){
+        // RCLCPP_INFO(get_logger(), "Entering the compare timer callback");
+        if (!map_ready_){
+            return;
+        }
+
+        if (current_index_ >= trajectory_.size()){
+            return;
+        }
         auto map_util = mighty_->getMapUtilShared().get();
-        map_util->info();
-        if (!map_util) {
-            RCLCPP_ERROR(get_logger(), "Map util not available.");
+        // RCLCPP_INFO(get_logger(), "Got map in compare timer callback");
+        if (!initial_unknown_saved_map_){
+            RCLCPP_INFO(get_logger(), "SAVING THE ORIGINAL STUFF");
+            auto dim = map_util->getDim();
+            RCLCPP_INFO(get_logger(), "the dimensions are %d %d %d", dim(0), dim(1), dim(2));
+            for (int x = 0; x < dim(0); ++x)
+            for (int y = 0; y < dim(1); ++y)
+            for (int z = 0; z < dim(2); ++z)
+            {
+                Vec3i local(x,y,z);
+                if (map_util->isUnknown(local))
+                {
+                    Vec3f world = map_util->intToFloat(local);
+                    GlobalVoxel gv = worldToGlobalVoxel(world);
+                    remaining_original_unknown_.insert(gv);
+                }
+                // RCLCPP_INFO(get_logger(), "populating the original unknown"); // TODO: CHECK HERE
+            }
+            original_unknown_num_ = remaining_original_unknown_.size();
+            initial_unknown_saved_map_ = true;
             return;
         }
 
-        int num_unknown = map_util->countUnknownCells();
-        RCLCPP_INFO(get_logger(), "%d is number unknown cells", num_unknown);
-        visualization_msgs::msg::MarkerArray marker_array;
-        int id = 0;
-
-        double radius = map_util->getRes();
-        int min_num = 1;
-
-        for (const auto& traj : trajectories_)
+        // FOR EACH TIME t
+        for (auto it = remaining_original_unknown_.begin();
+            it != remaining_original_unknown_.end(); )
         {
-            for (const auto& pt : traj)
+            // RCLCPP_INFO(get_logger(), "inside loop for time t");
+            // Convert global voxel back to world center
+            Vec3f world;
+            world.x() = (it->x() + 0.5f) * res_;
+            world.y() = (it->y() + 0.5f) * res_;
+            world.z() = (it->z() + 0.5f) * res_;
+
+            // If voxel not currently inside map window → skip
+            if (map_util->isOutside(world))
             {
-                Vecf<3> pt_f;
-                pt_f << static_cast<float>(pt.x()),
-                        static_cast<float>(pt.y()),
-                        static_cast<float>(pt.z());
-                auto occ = map_util->detectOcclusionAt(pt_f, radius, min_num);
-
-                if (occ.is_occlusion)
-                {
-                    // RCLCPP_INFO(get_logger(), "Found an occlusion");
-                    visualization_msgs::msg::Marker m;
-                    m.header.frame_id = "map";
-                    m.header.stamp = rclcpp::Time(0);//now();
-                    m.ns = "occlusions";
-                    m.id = id++;
-                    m.type = visualization_msgs::msg::Marker::SPHERE;
-                    m.action = visualization_msgs::msg::Marker::ADD;
-
-                    m.pose.position.x = pt.x();
-                    m.pose.position.y = pt.y();
-                    m.pose.position.z = pt.z();
-
-                    m.scale.x = 0.12;
-                    m.scale.y = 0.12;
-                    m.scale.z = 0.12;
-
-                    m.color.r = 1.0;
-                    m.color.g = 1.0;
-                    m.color.b = 0.0;
-                    m.color.a = 1.0;
-
-                    marker_array.markers.push_back(m);
-                }
-                
+                RCLCPP_INFO(get_logger(), "outside map");
+                ++it;
+                continue;
             }
+
+            // If it is no longer unknown → converted
+            if (!map_util->isUnknown(world))
+            {
+                it = remaining_original_unknown_.erase(it);
+                conversion_count_++;
+            }
+            else
+            {
+                ++it;
+            }
+            // RCLCPP_INFO(get_logger(), "FAILED TO FIND DIFFERENCES");
+
+
         }
 
-        visualization_msgs::msg::Marker traj_marker;
-        traj_marker.header.frame_id = "map";
-        traj_marker.header.stamp = rclcpp::Time(0);
-        traj_marker.ns = "trajectory_debug";
-        traj_marker.id = 0;
-        traj_marker.type = visualization_msgs::msg::Marker::LINE_LIST;
-        traj_marker.action = visualization_msgs::msg::Marker::ADD;
+        size_t time_index =
+        std::min(current_index_ - 1, trajectory_.size() - 1);
 
-        traj_marker.scale.x = 0.05;  // line width
+        double traj_time = trajectory_[time_index].t;
 
-        traj_marker.color.a = 1.0;  // not used for LINE_LIST with per-vertex colors
-
-        for (const auto& traj : trajectories_)
-        {
-            for (size_t i = 0; i + 1 < traj.size(); ++i)
-            {
-                const auto& p0 = traj[i];
-                const auto& p1 = traj[i + 1];
-
-                // Midpoint classification
-                Eigen::Vector3d mid = 0.5 * (p0 + p1);
-
-                Vecf<3> mid_f;
-                mid_f << static_cast<float>(mid.x()),
-                        static_cast<float>(mid.y()),
-                        static_cast<float>(mid.z());
-                if (map_util->isOutside(map_util->floatToInt(mid_f)))
-                {
-                    // std::cout << "Outside map: " << mid.transpose() << std::endl;
-                }
-
-                std_msgs::msg::ColorRGBA color;
-                color.a = 1.0;
-
-                if (map_util->isUnknown(mid_f))
-                {
-                    // Blue
-                    color.r = 0.0;
-                    color.g = 0.0;
-                    color.b = 1.0;
-                }
-                else if (map_util->isFree(mid_f))
-                {
-                    // Green
-                    color.r = 0.0;
-                    color.g = 1.0;
-                    color.b = 0.0;
-                }
-                else if (map_util->isOccupied(mid_f))
-                {
-                    // Occupied (optional red)
-                    color.r = 1.0;
-                    color.g = 0.0;
-                    color.b = 0.0;
-                }
-                else{
-                    color.r = 1.0;
-                    color.g = 0.0;
-                    color.b = 1.0;
-                }
-
-                geometry_msgs::msg::Point pt0, pt1;
-                pt0.x = p0.x();
-                pt0.y = p0.y();
-                pt0.z = p0.z();
-
-                pt1.x = p1.x();
-                pt1.y = p1.y();
-                pt1.z = p1.z();
-
-                traj_marker.points.push_back(pt0);
-                traj_marker.points.push_back(pt1);
-
-                traj_marker.colors.push_back(color);
-                traj_marker.colors.push_back(color);
-            }
-        }
-
-        marker_array.markers.push_back(traj_marker);
+        double percent_remaining = double(conversion_count_)/original_unknown_num_;
+        
+        progress_file_ << traj_time << "," << percent_remaining << "\n";
 
         RCLCPP_INFO(get_logger(),
-            "Publishing %zu occlusion markers",
-            marker_array.markers.size());
-
-        pub_occ_->publish(marker_array);
-        visualized_ = true;
-
-        RCLCPP_INFO(get_logger(), "Occlusion markers published.");
+            "Converted %d/%zu initial unknown points",
+            conversion_count_, original_unknown_num_);
     }
+
 
     void controlTimerCallback()
     {
@@ -919,8 +840,15 @@ private:
         quadGoal.j.x = pt.jx;
         quadGoal.j.y = pt.jy;
         quadGoal.j.z = pt.jz;
+        if (std::sqrt(pt.vx*pt.vx + pt.vy*pt.vy) > 0.001){
+            quadGoal.yaw  = std::atan2(pt.vy, pt.vx); //0.0;   // Not in CSV
+        }
+        else{
+            quadGoal.yaw = old_yaw_;
+        }
 
-        quadGoal.yaw  = 0.0;   // Not in CSV
+        old_yaw_ = quadGoal.yaw;
+
         quadGoal.dyaw = 0.0;
 
         pub_goal_->publish(quadGoal);
@@ -987,7 +915,18 @@ private:
     rclcpp::Publisher<dynus_interfaces::msg::Goal>::SharedPtr pub_goal_;
     std::ofstream progress_file_;
 
+    std::unordered_set<
+    GlobalVoxel,
+    GlobalVoxelHash,
+    GlobalVoxelEqual
+    > remaining_original_unknown_;
 
+    size_t conversion_count_ = 0;
+    rclcpp::TimerBase::SharedPtr compare_timer_;
+    bool initial_unknown_saved_map_{false};
+    double res_ = 0.15; // TODO: MAKE SURE THIS MATCHES WITH THE DEFAULT RESOLUTION VALUE
+    size_t original_unknown_num_;
+    float old_yaw_ = 0.0;
 };
 
 int main(int argc, char **argv)
