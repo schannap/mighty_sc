@@ -46,6 +46,12 @@
 #include "dynus_interfaces/msg/yaw_output.hpp"
 #include "dynus_interfaces/msg/pn_adaptation.hpp"
 
+#include <pcl/common/common.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+
 #include <iomanip>
 #include <cstddef> // Required for size_t
 #include <cmath> // Required for atan()
@@ -485,18 +491,13 @@ public:
                       std::placeholders::_1,
                       std::placeholders::_2));
 
-        // planning_timer_ = create_wall_timer(
-        //     std::chrono::milliseconds(200),
-        //     std::bind(&OcclusionAnalysisNode::process, this),
-        //     cb_group_map_);
-
         control_timer_ = this->create_wall_timer(
             std::chrono::milliseconds(10),
             std::bind(&OcclusionAnalysisNode::controlTimerCallback, this));
 
-        compare_timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(10),
-            std::bind(&OcclusionAnalysisNode::compareTimerCallback, this));
+        // compare_timer_ = this->create_wall_timer(
+        //     std::chrono::milliseconds(10),
+        //     std::bind(&OcclusionAnalysisNode::compareTimerCallback, this));
 
 
     }
@@ -617,15 +618,12 @@ private:
     }
 
     // ============================================
-    // KEEP THIS MAP CALLBACK EXACTLY AS DESIGNED
+    // MAP CALLBACK
     // ============================================
     void mapCallback(
         const sensor_msgs::msg::PointCloud2::ConstPtr &map_msg,
         const sensor_msgs::msg::PointCloud2::ConstPtr &unk_msg)
     {
-        // if (map_ready_)
-        //     return;
-
         pcl::PointCloud<pcl::PointXYZ>::Ptr map_pc(
             new pcl::PointCloud<pcl::PointXYZ>());
         pcl::fromROSMsg(*map_msg, *map_pc);
@@ -634,85 +632,23 @@ private:
             new pcl::PointCloud<pcl::PointXYZ>());
         pcl::fromROSMsg(*unk_msg, *unk_pc);
 
+        // pcl::PointXYZ minPt, maxPt;
+        // pcl::getMinMax3D(*unk_msg, minPt, maxPt);
+
+        // // Print the bounds
+        // RCLCPP_INFO(this->get_logger(), "Bounds: Min(%.2f, %.2f, %.2f) Max(%.2f, %.2f, %.2f)",
+        //             min_pt[0], min_pt[1], min_pt[2],
+        //             max_pt[0], max_pt[1], max_pt[2]);
+
         if (!mighty_)
             mighty_ = std::make_shared<MIGHTY>(par_);
-            // dgp_manager_.setParameters(par_);
-
+        
+        std::lock_guard<std::mutex> lock(map_mutex_);
         mighty_->updateMap(map_pc, unk_pc);
-            // Save initial unknown cloud once
 
-        // Save initial unknown cloud ONCE
-        if (!initial_unknown_saved_)
-        {
-            initial_unknown_pc_ = unk_pc;
-            initial_unknown_saved_ = true;
-
-            RCLCPP_INFO(get_logger(),
-                "Stored initial unknown cloud with %zu points",
-                initial_unknown_pc_->size());
-
-            return;
+        if (!map_ready_){
+            map_ready_ = true;
         }
-
-        // evaluateExplorationProgress(unk_pc);
-        // evaluateExplorationProgress(map_pc);
-
-        map_ready_ = true;
-        // RCLCPP_INFO(get_logger(), "Map received and stored.");
-    }
-
-    void evaluateExplorationProgress(pcl::PointCloud<pcl::PointXYZ>::Ptr current_free)
-    {
-        pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
-        kdtree.setInputCloud(current_free);
-
-        int converted = 0;
-        int total_region = 0;
-        const float tolerance = 0.025;  // 2.5 cm tolerance
-
-        for (const auto& pt : initial_unknown_pc_->points)
-        {
-            if (pt.x < 5.0 || pt.x > 8.0)
-                continue;
-            total_region++;
-
-            std::vector<int> indices;
-            std::vector<float> sq_dists;
-
-            if (kdtree.radiusSearch(pt, tolerance, indices, sq_dists) > 0)
-            {
-                converted++;
-            }
-        }
-
-        int total_initial = initial_unknown_pc_->size();
-
-        // RCLCPP_INFO(get_logger(),
-        //     "Converted %d / %d initial unknown points",
-        //     converted, total_initial);
-
-        // exploration_progress_.push_back(converted);
-
-        size_t time_index =
-            std::min(current_index_ - 1, trajectory_.size() - 1);
-
-        double traj_time = trajectory_[time_index].t;
-
-        progress_time_.push_back(traj_time);
-        progress_converted_.push_back(converted);
-
-        // double percent_remaining =(double)converted / total_initial;
-        double percent_remaining =(double)converted / total_region;
-
-        progress_file_ << traj_time << ","
-                    << percent_remaining << "\n";
-
-        // RCLCPP_INFO(get_logger(),
-        //     "[t = %.3f] Converted %d / %d initial unknown points",
-        //     traj_time, converted, total_initial);
-        RCLCPP_INFO(get_logger(),
-            "[t = %.3f] Converted %d / %d initial unknown points",
-            traj_time, converted, total_region);
     }
 
     // HELPER FUNCTION
@@ -725,86 +661,85 @@ private:
     );
     }
 
-    void compareTimerCallback(){
-        // RCLCPP_INFO(get_logger(), "Entering the compare timer callback");
-        if (!map_ready_){
-            return;
-        }
+    // void compareTimerCallback(){
+    //     // RCLCPP_INFO(get_logger(), "Entering the compare timer callback");
+    //     if (!map_ready_){
+    //         return;
+    //     }
 
-        if (current_index_ >= trajectory_.size()){
-            return;
-        }
-        auto map_util = mighty_->getMapUtilShared().get();
-        // RCLCPP_INFO(get_logger(), "Got map in compare timer callback");
-        if (!initial_unknown_saved_map_){
-            RCLCPP_INFO(get_logger(), "SAVING THE ORIGINAL STUFF");
-            auto dim = map_util->getDim();
-            RCLCPP_INFO(get_logger(), "the dimensions are %d %d %d", dim(0), dim(1), dim(2));
-            for (int x = 0; x < dim(0); ++x)
-            for (int y = 0; y < dim(1); ++y)
-            for (int z = 0; z < dim(2); ++z)
-            {
-                Vec3i local(x,y,z);
-                if (map_util->isUnknown(local))
-                {
-                    Vec3f world = map_util->intToFloat(local);
-                    GlobalVoxel gv = worldToGlobalVoxel(world);
-                    remaining_original_unknown_.insert(gv);
-                }
-                // RCLCPP_INFO(get_logger(), "populating the original unknown"); // TODO: CHECK HERE
-            }
-            original_unknown_num_ = remaining_original_unknown_.size();
-            initial_unknown_saved_map_ = true;
-            return;
-        }
+    //     if (current_index_ >= trajectory_.size()){
+    //         RCLCPP_INFO(get_logger(), "Remaining unknown: %zu", remaining_original_unknown_.size());
+    //         return;
+    //     }
+    //     auto map_util = mighty_->getMapUtilShared().get();
+    //     // RCLCPP_INFO(get_logger(), "Got map in compare timer callback");
+    //     if (!initial_unknown_saved_map_){
+    //         RCLCPP_INFO(get_logger(), "SAVING THE ORIGINAL MAP");
+    //         auto dim = map_util->getDim();
+    //         RCLCPP_INFO(get_logger(), "the dimensions are %d %d %d", dim(0), dim(1), dim(2));
+    //         for (int x = 0; x < dim(0); ++x)
+    //         for (int y = 0; y < dim(1); ++y)
+    //         for (int z = 0; z < dim(2); ++z)
+    //         {
+    //             Vec3i local(x,y,z);
+    //             if (map_util->isUnknown(local))
+    //             {
+    //                 Vec3f world = map_util->intToFloat(local);
+    //                 GlobalVoxel gv = worldToGlobalVoxel(world);
+    //                 remaining_original_unknown_.insert(gv);
+    //             }
+    //             // RCLCPP_INFO(get_logger(), "populating the original unknown"); // TODO: CHECK HERE
+    //         }
+    //         original_unknown_num_ = remaining_original_unknown_.size();
+    //         initial_unknown_saved_map_ = true;
+    //         return;
+    //     }
 
-        // FOR EACH TIME t
-        for (auto it = remaining_original_unknown_.begin();
-            it != remaining_original_unknown_.end(); )
-        {
-            // RCLCPP_INFO(get_logger(), "inside loop for time t");
-            // Convert global voxel back to world center
-            Vec3f world;
-            world.x() = (it->x() + 0.5f) * res_;
-            world.y() = (it->y() + 0.5f) * res_;
-            world.z() = (it->z() + 0.5f) * res_;
+    //     // FOR EACH TIME t
+    //     for (auto it = remaining_original_unknown_.begin();
+    //         it != remaining_original_unknown_.end(); )
+    //     {
+    //         // Convert global voxel back to world center
+    //         Vec3f world;
+    //         world.x() = (it->x() + 0.5f) * res_;
+    //         world.y() = (it->y() + 0.5f) * res_;
+    //         world.z() = (it->z() + 0.5f) * res_;
 
-            // If voxel not currently inside map window → skip
-            if (map_util->isOutside(world))
-            {
-                RCLCPP_INFO(get_logger(), "outside map");
-                ++it;
-                continue;
-            }
+    //         // If voxel not currently inside map window → skip
+    //         if (map_util->isOutside(world))
+    //         {
+    //             RCLCPP_INFO(get_logger(), "outside map");
+    //             ++it;
+    //             continue;
+    //         }
 
-            // If it is no longer unknown → converted
-            if (!map_util->isUnknown(world))
-            {
-                it = remaining_original_unknown_.erase(it);
-                conversion_count_++;
-            }
-            else
-            {
-                ++it;
-            }
-            // RCLCPP_INFO(get_logger(), "FAILED TO FIND DIFFERENCES");
+    //         // If it is no longer unknown → converted
+    //         if (!map_util->isUnknown(world))
+    //         {
+    //             it = remaining_original_unknown_.erase(it);
+    //             conversion_count_++;
+    //         }
+    //         else
+    //         {
+    //             ++it;
+    //         }
 
+    //     }
 
-        }
+    //     size_t time_index =
+    //     std::min(current_index_ - 1, trajectory_.size() - 1);
 
-        size_t time_index =
-        std::min(current_index_ - 1, trajectory_.size() - 1);
+    //     double traj_time = trajectory_[time_index].t;
 
-        double traj_time = trajectory_[time_index].t;
-
-        double percent_remaining = double(conversion_count_)/original_unknown_num_;
+    //     double percent_remaining = double(conversion_count_)/original_unknown_num_;
         
-        progress_file_ << traj_time << "," << percent_remaining << "\n";
+    //     progress_file_ << traj_time << "," << percent_remaining << "\n";
 
-        RCLCPP_INFO(get_logger(),
-            "Converted %d/%zu initial unknown points",
-            conversion_count_, original_unknown_num_);
-    }
+    //     RCLCPP_INFO(get_logger(),
+    //         "Converted %d/%zu initial unknown points",
+    //         conversion_count_, original_unknown_num_);
+
+    // }
 
 
     void controlTimerCallback()
@@ -812,9 +747,8 @@ private:
         if (trajectory_.empty())
             return;
 
-        if (current_index_ >= trajectory_.size())
-        {
-            RCLCPP_INFO_ONCE(get_logger(), "Trajectory complete.");
+        if (current_index_ >= trajectory_.size()){
+            // RCLCPP_INFO(get_logger(), "Trajectory Complete. Remaining unknown: %zu", remaining_original_unknown_.size());
             return;
         }
 
@@ -853,7 +787,83 @@ private:
 
         pub_goal_->publish(quadGoal);
 
+
+        // Move conversion checking here
+                // RCLCPP_INFO(get_logger(), "Entering the compare timer callback");
+        if (!map_ready_){
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(map_mutex_);
+        auto map_util = mighty_->getMapUtilShared().get();
+        // RCLCPP_INFO(get_logger(), "Got map in compare timer callback");
+        if (!initial_unknown_saved_map_){
+            RCLCPP_INFO(get_logger(), "SAVING THE ORIGINAL MAP");
+            auto dim = map_util->getDim();
+            RCLCPP_INFO(get_logger(), "the dimensions are %d %d %d", dim(0), dim(1), dim(2));
+            for (int x = 0; x < dim(0); ++x)
+            for (int y = 0; y < dim(1); ++y)
+            for (int z = 0; z < dim(2); ++z)
+            {
+                Vec3i local(x,y,z);
+                if (map_util->isUnknown(local))
+                {
+                    Vec3f world = map_util->intToFloat(local);
+                    GlobalVoxel gv = worldToGlobalVoxel(world);
+                    remaining_original_unknown_.insert(gv);
+                }
+                // RCLCPP_INFO(get_logger(), "populating the original unknown"); // TODO: CHECK HERE
+            }
+            original_unknown_num_ = remaining_original_unknown_.size();
+            initial_unknown_saved_map_ = true;
+            return;
+        }
+
+        // FOR EACH TIME t
+        for (auto it = remaining_original_unknown_.begin();
+            it != remaining_original_unknown_.end(); )
+        {
+            // Convert global voxel back to world center
+            Vec3f world;
+            world.x() = (it->x() + 0.5f) * res_;
+            world.y() = (it->y() + 0.5f) * res_;
+            world.z() = (it->z() + 0.5f) * res_;
+
+            // If voxel not currently inside map window → skip
+            if (map_util->isOutside(world))
+            {
+                ++it;
+                continue;
+            }
+
+            // If it is no longer unknown → converted
+            if (!map_util->isUnknown(world))
+            {
+                it = remaining_original_unknown_.erase(it);
+                conversion_count_++;
+            }
+            else
+            {
+                ++it;
+            }
+
+        }
+
+        size_t time_index =
+        std::min(current_index_ - 1, trajectory_.size() - 1);
+
+        double traj_time = trajectory_[time_index].t;
+
+        double percent_remaining = double(conversion_count_)/original_unknown_num_;
+        
+        progress_file_ << traj_time << "," << percent_remaining << "\n";
+
+        // RCLCPP_INFO(get_logger(),
+        //     "Converted %d/%zu initial unknown points",
+        //     conversion_count_, original_unknown_num_);
+        
         current_index_++;   // Advance one trajectory sample
+
     }
 
     // ===============================
@@ -879,7 +889,6 @@ private:
     std::shared_ptr<Sync> sync_;
 
     bool map_ready_{false};
-    bool visualized_{false};
 
     std::shared_ptr<MIGHTY> mighty_;
     DGPManager dgp_manager_;
@@ -887,29 +896,8 @@ private:
 
     parameters par_;
 
-    // To collect data about information gain
-    // pcl::PointCloud<pcl::PointXYZ>::Ptr initial_unknown_pc_;
-    // bool initial_unknown_saved_ = false;
-    // std::vector<double> exploration_progress_;
-    // std::vector<double> timestamps_;
-    // std::vector<double> path_length_;
-
-    // struct TrajPoint {
-    //     double t;
-    //     double x, y, z;
-    //     double vx, vy, vz;
-    // };
-
-    // std::vector<TrajPoint> trajectory_;
-
     std::vector<TrajPoint> trajectory_;
     size_t current_index_ = 0;
-
-    pcl::PointCloud<pcl::PointXYZ>::Ptr initial_unknown_pc_;
-    bool initial_unknown_saved_ = false;
-
-    std::vector<double> progress_time_;
-    std::vector<int>    progress_converted_;
 
     rclcpp::TimerBase::SharedPtr control_timer_;
     rclcpp::Publisher<dynus_interfaces::msg::Goal>::SharedPtr pub_goal_;
@@ -927,6 +915,8 @@ private:
     double res_ = 0.15; // TODO: MAKE SURE THIS MATCHES WITH THE DEFAULT RESOLUTION VALUE
     size_t original_unknown_num_;
     float old_yaw_ = 0.0;
+    std::mutex map_mutex_;
+
 };
 
 int main(int argc, char **argv)
