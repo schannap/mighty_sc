@@ -146,18 +146,35 @@ public:
         this->get_parameter("trajectory_csv_path", traj_path);
         loadTrajectory(traj_path);
 
-        progress_file_.open("exploration_progress.csv");
+        
+        std::string file_identifier;
+
+        size_t start_pos = traj_path.find("sfc");
+        if (start_pos != std::string::npos)
+        {
+            size_t end_pos = traj_path.find(".", start_pos);
+            if (end_pos != std::string::npos)
+            {
+                file_identifier = traj_path.substr(start_pos, end_pos - start_pos);
+            }
+        }
+
+        std::string data_file_name =
+            "csv_data/exploration_progress_" + file_identifier + ".csv";
+
+        progress_file_.open(data_file_name);
         progress_file_ << std::fixed << std::setprecision(10);
+        progress_file_ << "trajectory," << traj_path << "\n";
         progress_file_ << "time_sec,percent_unknown\n";
 
         // ------------------------------------------------------------------------------------------
 
 
-        if (traj_directory_.empty()) {
-            RCLCPP_FATAL(get_logger(), "traj_directory parameter not set.");
-            rclcpp::shutdown();
-            return;
-        }
+        // if (traj_directory_.empty()) {
+        //     RCLCPP_FATAL(get_logger(), "traj_directory parameter not set.");
+        //     rclcpp::shutdown();
+        //     return;
+        // }
 
         // loadTrajectories(traj_directory_);
 
@@ -321,8 +338,10 @@ private:
         pcl::PointCloud<pcl::PointXYZ>::Ptr unk_pc(
             new pcl::PointCloud<pcl::PointXYZ>());
         pcl::fromROSMsg(*unk_msg, *unk_pc);
-
-        if (!initial_unknown_saved_) {
+        if (unk_pc->points.empty()){
+            return;
+        }
+        if (!initial_unknown_saved_ && !unk_pc->points.empty()) {
             for (const auto& pt : unk_pc->points) {
                 GlobalVoxel gv = worldToGlobalVoxel(Vec3f(pt.x, pt.y, pt.z));
                 original_unknown_.insert(gv);
@@ -346,6 +365,7 @@ private:
         }
         
         if (current_index_ >= trajectory_.size()){
+            rclcpp::shutdown();
             // RCLCPP_INFO(get_logger(), "Trajectory Complete. Remaining unknown: %zu", remaining_original_unknown_.size());
             return;
         }

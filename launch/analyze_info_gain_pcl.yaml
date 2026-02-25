@@ -22,12 +22,8 @@ windows:
         - sleep 10
         - ros2 launch mighty onboard_mighty.launch.py x:=0.0 y:=0.0 z:=1.0 yaw:=1.57 initial_wdx:=30.0 initial_wdy:=30.0 initial_wdz:=10.0
       
-      # # Overlay node (using benchmakr data csvs)
-      # - shell_command:
-      #   - sleep 10
-      #   - ros2 launch mighty trajectory_overlay.launch.py nominal_dir:=src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5 modified_dir:=src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5with_occ_
-
       - shell_command:
         - sleep 20
         # - ros2 launch mighty analyze_info_gain.launch.py traj_directory:=src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5 initial_wdx:=30.0 initial_wdy:=30.0 min_wdx:=30.0 min_wdy:=30.0 min_wdz:=3.0 trajectory_csv_path:=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5with_occ_/traj_mighty_N5__sfc_g000.mysco2.csv
-        - ros2 launch mighty analyze_info_gain_pcl.launch.py traj_directory:=src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5 initial_wdx:=30.0 initial_wdy:=30.0 min_wdx:=30.0 min_wdy:=30.0 min_wdz:=3.0 trajectory_csv_path:=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5/traj_mighty_N5__sfc_g000.mysco2.csv
+        # - ros2 launch mighty analyze_info_gain_pcl.launch.py traj_directory:=src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5 initial_wdx:=30.0 initial_wdy:=30.0 min_wdx:=30.0 min_wdy:=30.0 min_wdz:=3.0 trajectory_csv_path:=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5/traj_mighty_N5__sfc_g000.mysco2.csv
+        - ros2 launch mighty analyze_info_gain_pcl.launch.py initial_wdx:=30.0 initial_wdy:=30.0 min_wdx:=30.0 min_wdy:=30.0 min_wdz:=3.0 trajectory_csv_path:=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5/traj_mighty_N5__sfc_g000.mysco2.csv
