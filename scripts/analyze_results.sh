@@ -1,6 +1,7 @@
 #!/bin/bash
 
-TRAJ_DIR=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5
+# TRAJ_DIR=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5
+TRAJ_DIR=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5with_occ_
 
 source /home/kkondo/code/mighty_ws/install/setup.bash
 source /home/kkondo/code/decomp_ws/install/setup.bash
