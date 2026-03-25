@@ -66,6 +66,7 @@ namespace lbfgs
         double dyn_constr_vel_weight = 10.0;
         double dyn_constr_acc_weight = 10.0;
         double dyn_constr_jerk_weight = 0.0;
+        double occ_weight = 1.0;
         int num_dyn_obst_samples = 10;         // Number of dynamic obstacle samples
         double Co = 0.5;                       // for static obstacle avoidance
         double Cw = 1.0;                       // for dynamic obstacle avoidance
@@ -715,7 +716,7 @@ namespace lbfgs
         double dyn_constr_bodyrate_weight_ = 1.0;
         double dyn_constr_tilt_weight_ = 1.0;
         double dyn_constr_thrust_weight_ = 1.0;
-        double occ_weight_ = -10.0;
+        double occ_weight_;
         int num_dyn_obst_samples_; // Number of dynamic obstacle samples
         double Co_; // for static obstacle avoidance
         double Cw_;

@@ -134,6 +134,7 @@ struct parameters
   double dyn_constr_vel_weight;
   double dyn_constr_acc_weight;
   double dyn_constr_jerk_weight;
+  double occ_weight;
   int num_dyn_obst_samples; // Number of dynamic obstacle samples
   double planner_Co; // for static obstacle avoidance
   double planner_Cw;
