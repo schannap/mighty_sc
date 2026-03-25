@@ -665,6 +665,7 @@ void SolverLBFGS::initializeSolver(const planner_params_t &params)
     dyn_constr_bodyrate_weight_ = params.dyn_constr_bodyrate_weight;
     dyn_constr_tilt_weight_ = params.dyn_constr_tilt_weight;
     dyn_constr_thrust_weight_ = params.dyn_constr_thrust_weight;
+    occ_weight_ = params.occ_weight;
     num_dyn_obst_samples_ = params.num_dyn_obst_samples;         // Number of dynamic obstacle samples
     Co_ = params.Co;                                             // Clearance distance for static obstacle avoidance
     Cw_ = params.Cw;                                             // Clearance distance for dynamic obstacle avoidance

@@ -43,6 +43,7 @@ MIGHTY::MIGHTY(parameters par) : par_(par)
   planner_params_.dyn_constr_bodyrate_weight = par_.dyn_constr_bodyrate_weight;
   planner_params_.dyn_constr_tilt_weight = par_.dyn_constr_tilt_weight;
   planner_params_.dyn_constr_thrust_weight = par_.dyn_constr_thrust_weight;
+  planner_params_.occ_weight = par_.occ_weight; // occlusion awareness weight 
   planner_params_.num_dyn_obst_samples = par_.num_dyn_obst_samples; // Number of dynamic obstacle samples
   planner_params_.Co = par_.planner_Co;                             // for static obstacle avoidance
   planner_params_.Cw = par_.planner_Cw;                             // for dynamic obstacle avoidance

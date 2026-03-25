@@ -458,7 +458,9 @@ private:
 
                 if (line.rfind("t,", 0) == 0)
                     continue;
-
+                // Skip lines that do NOT start with a number or minus sign
+                if (!std::isdigit(line[0]) && line[0] != '-' && line[0] != '.')
+                    continue;
                 std::stringstream ss(line);
                 std::string token;
                 std::vector<double> values;

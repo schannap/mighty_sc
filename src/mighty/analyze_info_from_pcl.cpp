@@ -135,6 +135,14 @@ public:
         declare_parameter<std::vector<double>>("factor_initial_list", std::vector<double>{2.0, 1.0, 1.0});
         declare_parameter<std::vector<double>>("factor_final_list", std::vector<double>{4.0, 3.0, 2.0});
 
+        //Declare a parameter for benchmarking x min, x max, y min, y max
+        //Declare a parameter for whether benchmarking limits should be used
+        declare_parameter<bool>("use_benchmarking_limits", true);
+        declare_parameter<double>("benchmark_x_min", 13.0);
+        declare_parameter<double>("benchmark_x_max", 20.0);
+        declare_parameter<double>("benchmark_y_min", -2.0);
+        declare_parameter<double>("benchmark_y_max", 5.0);
+
         declare_parameter<std::string>("planner_name", "mighty");
         declare_parameter<bool>("use_single_threaded", false);
 
@@ -146,21 +154,13 @@ public:
         this->get_parameter("trajectory_csv_path", traj_path);
         loadTrajectory(traj_path);
 
-        
+        declare_parameter<std::string>("file_identifier", ""); // Optional parameter to specify a custom identifier for the output file
         std::string file_identifier;
+        this->get_parameter("file_identifier", file_identifier);
 
-        size_t start_pos = traj_path.find("sfc");
-        if (start_pos != std::string::npos)
-        {
-            size_t end_pos = traj_path.find(".", start_pos);
-            if (end_pos != std::string::npos)
-            {
-                file_identifier = traj_path.substr(start_pos, end_pos - start_pos);
-            }
-        }
 
         std::string data_file_name =
-            "csv_data/exploration_progress_" + file_identifier + ".csv";
+            "/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/" + file_identifier + ".csv";
 
         progress_file_.open(data_file_name);
         progress_file_ << std::fixed << std::setprecision(10);
@@ -168,15 +168,6 @@ public:
         progress_file_ << "time_sec,percent_unknown\n";
 
         // ------------------------------------------------------------------------------------------
-
-
-        // if (traj_directory_.empty()) {
-        //     RCLCPP_FATAL(get_logger(), "traj_directory parameter not set.");
-        //     rclcpp::shutdown();
-        //     return;
-        // }
-
-        // loadTrajectories(traj_directory_);
 
         pub_occ_ = create_publisher<visualization_msgs::msg::MarkerArray>(
             "occlusion_markers", 10);
@@ -211,9 +202,27 @@ public:
                       std::placeholders::_2));
 
 
+        get_parameter("use_benchmarking_limits", use_benchmarking_limits_);
+
+        get_parameter("benchmark_x_min", benchmark_x_min_);
+        get_parameter("benchmark_x_max", benchmark_x_max_);
+        get_parameter("benchmark_y_min", benchmark_y_min_);
+        get_parameter("benchmark_y_max", benchmark_y_max_);
+
+
     }
 
 private:
+    inline bool inBenchmarkRegion(const Vec3f& pt) const
+    {
+        if (!use_benchmarking_limits_)
+            return true;
+
+        return (pt.x() >= benchmark_x_min_ &&
+                pt.x() <= benchmark_x_max_ &&
+                pt.y() >= benchmark_y_min_ &&
+                pt.y() <= benchmark_y_max_);
+    }
 
     // ===============================
     // CSV LOADING
@@ -252,6 +261,10 @@ private:
 
             // Skip header
             if (line.rfind("t,", 0) == 0)
+                continue;
+
+            // Skip lines that do NOT start with a number or minus sign
+            if (!std::isdigit(line[0]) && line[0] != '-' && line[0] != '.')
                 continue;
 
             std::stringstream ss(line);
@@ -343,11 +356,17 @@ private:
         }
         if (!initial_unknown_saved_ && !unk_pc->points.empty()) {
             for (const auto& pt : unk_pc->points) {
-                GlobalVoxel gv = worldToGlobalVoxel(Vec3f(pt.x, pt.y, pt.z));
+
+                Vec3f p(pt.x, pt.y, pt.z);
+
+                if (!inBenchmarkRegion(p))
+                    continue;
+
+                GlobalVoxel gv = worldToGlobalVoxel(p);
+
                 original_unknown_.insert(gv);
                 remaining_unknown_.insert(gv);
             }
-
             original_unknown_num_ = original_unknown_.size();
             initial_unknown_saved_ = true;
 
@@ -407,9 +426,15 @@ private:
 
         // Build current unknown set
         std::unordered_set<GlobalVoxel, GlobalVoxelHash> current_unknown;
-
         for (const auto& pt : unk_pc->points) {
-            GlobalVoxel gv = worldToGlobalVoxel(Vec3f(pt.x, pt.y, pt.z));
+
+            Vec3f p(pt.x, pt.y, pt.z);
+
+            if (!inBenchmarkRegion(p))
+                continue;
+
+            GlobalVoxel gv = worldToGlobalVoxel(p);
+
             current_unknown.insert(gv);
         }
 
@@ -429,11 +454,11 @@ private:
         double percent_converted =
             double(converted_.size()) / original_unknown_num_;
 
-        RCLCPP_INFO(get_logger(),
-            "Converted %zu / %zu (%.3f%%)",
-            converted_.size(),
-            original_unknown_num_,
-            100.0 * percent_converted);
+        // RCLCPP_INFO(get_logger(),
+        //     "Converted %zu / %zu (%.3f%%)",
+        //     converted_.size(),
+        //     original_unknown_num_,
+        //     100.0 * percent_converted);
 
         size_t time_index = std::min(current_index_ - 1, trajectory_.size() - 1);
 
@@ -512,6 +537,9 @@ private:
     std::unordered_set<GlobalVoxel, GlobalVoxelHash> remaining_unknown_;
     std::unordered_set<GlobalVoxel, GlobalVoxelHash> converted_;
 
+    bool use_benchmarking_limits_;
+    double benchmark_x_min_, benchmark_x_max_;
+    double benchmark_y_min_, benchmark_y_max_;
 
 };
 

@@ -257,7 +257,7 @@ public:
         double goal_x_ = get_parameter("goal_x").as_double();
         start_ = vec3FromStd(get_parameter("start").as_double_array(), "start");
         goals_.clear();
-        for (double y = -5.0; y <= 5.0 + 1e-3; y += 0.1)
+        for (double y = -1.0; y <= 5.0 + 1e-3; y += 0.1)
         {
             goals_.emplace_back(goal_x_, y, start_[2]); // changes x from 4.0 to 8.0
         }

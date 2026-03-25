@@ -659,7 +659,9 @@ static void dumpTrajectoryCsvV1(
     double traj_dump_dt_requested,
     double factor_used,
     double cost_value,
-    double total_traj_time_sec)
+    double total_traj_time_sec,
+    double jerk_weight,
+    double occ_weight)
 {
     if (samples.empty())
         return;
@@ -690,6 +692,7 @@ static void dumpTrajectoryCsvV1(
     ofs << "# cost_value: " << std::fixed << std::setprecision(9) << cost_value << "\n";
     ofs << "# total_traj_time_sec: " << std::fixed << std::setprecision(9) << total_traj_time_sec << "\n";
     ofs << "t,x,y,z,vx,vy,vz,ax,ay,az,jx,jy,jz\n";
+    ofs << "jerk weight: " << jerk_weight << ", occlusion weight: " << occ_weight << "\n";
 
     ofs << std::fixed << std::setprecision(9);
 
@@ -859,7 +862,7 @@ public:
         this->declare_parameter<double>("time_weight", 1.0);
         this->declare_parameter<double>("pos_anchor_weight", 1.0);
         this->declare_parameter<double>("stat_weight", 1.0);
-
+        this->declare_parameter<double>("occ_weight", -10000.0);
         this->declare_parameter<double>("dyn_constr_bodyrate_weight", 1.0);
         this->declare_parameter<double>("dyn_constr_tilt_weight", 1.0);
         this->declare_parameter<double>("dyn_constr_thrust_weight", 1.0);
@@ -921,7 +924,7 @@ public:
         // ----------------- Use occlusion cost --------------
         this->declare_parameter<bool>("use_occ_cost", true);
 
-
+        this->declare_parameter<std::string>("output_file_id", "1_diff");
         ///////////////////////////////////////////////////////////////////////////
 
 
@@ -1062,7 +1065,8 @@ private:
         latched_ = get_parameter("latched").as_bool();
 
         assumed_last_replan_time_sec_ = get_parameter("assumed_last_replan_time_sec").as_double();
-
+        output_file_id_ = get_parameter("output_file_id").as_string();
+        
         // Dump params (NEW)
         traj_dump_enable_ = get_parameter("traj_dump_enable").as_bool();
         traj_dump_root_dir_ = get_parameter("traj_dump_root_dir").as_string();
@@ -1083,8 +1087,10 @@ private:
                     occ_identifier = "";
                 }
                 std::string thread_string = use_single_threaded_ ? "single_thread" : "multi_thread";
+                // csv_out_ = "/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/" + thread_string + "/" +
+                //            planner_name_ + "_" + std::to_string(par_.num_N) + occ_identifier + "_benchmark.csv";
                 csv_out_ = "/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/" + thread_string + "/" +
-                           planner_name_ + "_" + std::to_string(par_.num_N) + occ_identifier + "_benchmark.csv";
+                           output_file_id_ + ".csv";
 
                 // NEW: derive dump directory for this run
                 if (traj_dump_enable_)
@@ -1103,7 +1109,8 @@ private:
                         occ_identifier = "";
                     }
 
-                    traj_dump_run_dir_ = (root / (planner_name_ + "_N" + std::to_string(par_.num_N) + occ_identifier)).string();
+                    // traj_dump_run_dir_ = (root / (planner_name_ + "_N" + std::to_string(par_.num_N) + occ_identifier)).string();
+                    traj_dump_run_dir_ = (root / output_file_id_);
 
                     if (!ensureDir(fs::path(traj_dump_run_dir_)))
                     {
@@ -1144,6 +1151,8 @@ private:
                 }
                 const fs::path out_dir = fs::path(traj_dump_run_dir_);
                 std::cout << "Trajectories dumped to directory: " << out_dir.string();
+                rclcpp::shutdown();
+                return;
 
             }
         }
@@ -1197,7 +1206,9 @@ private:
                             traj_dump_dt_,
                             r.factor_used,
                             r.cost_value,
-                            r.total_traj_time_sec);
+                            r.total_traj_time_sec,
+                            par_.jerk_weight,
+                            par_.occ_weight);
     }
 
     void solvePlanner(std::string solver_name){
@@ -1548,6 +1559,7 @@ private:
         par_.dyn_constr_vel_weight = this->get_parameter("dyn_constr_vel_weight").as_double();
         par_.dyn_constr_acc_weight = this->get_parameter("dyn_constr_acc_weight").as_double();
         par_.dyn_constr_jerk_weight = this->get_parameter("dyn_constr_jerk_weight").as_double();
+        par_.occ_weight = this->get_parameter("occ_weight").as_double();
         par_.num_dyn_obst_samples = this->get_parameter("num_dyn_obst_samples").as_int();
         par_.planner_Co = this->get_parameter("planner_Co").as_double();
         par_.planner_Cw = this->get_parameter("planner_Cw").as_double();
@@ -1620,6 +1632,7 @@ private:
         planner_params_.dyn_weight = par_.dynamic_weight;
         planner_params_.stat_weight = par_.stat_weight;
         planner_params_.jerk_weight = par_.jerk_weight;
+        planner_params_.occ_weight = par_.occ_weight;
         planner_params_.dyn_constr_vel_weight = par_.dyn_constr_vel_weight;
         planner_params_.dyn_constr_acc_weight = par_.dyn_constr_acc_weight;
         planner_params_.dyn_constr_jerk_weight = par_.dyn_constr_jerk_weight;
@@ -1657,6 +1670,8 @@ private:
             RCLCPP_WARN(get_logger(), "Failed to open csv_out: %s", csv_out_.c_str());
             return;
         }
+
+        ofs << "jerk weight: " << par_.jerk_weight << ", occlusion weight: " << par_.occ_weight << "\n";
 
         ofs << "planner_name,file,success,status,gurobi_error,per_opt_runtime_ms,total_opt_runtime_ms,factor_used,cost_value,total_traj_time_sec,"
                "corridor_max_min_violation,corridor_t_at_max,corridor_px,corridor_py,corridor_pz,corridor_best_poly_idx,corridor_violated,"
@@ -1766,7 +1781,7 @@ private:
     std::string traj_committed_topic_;
     std::string dgp_path_topic_;
     std::string csv_out_;
-
+    std::string output_file_id_;
     bool use_single_threaded_{false};
 
     bool visualize_{true};
