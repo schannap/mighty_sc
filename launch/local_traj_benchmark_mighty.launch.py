@@ -15,7 +15,8 @@ def generate_launch_description():
     gdb_prefix = 'xterm -e gdb -q -ex run --args'
 
     parameters_path=os.path.join(get_package_share_directory('mighty'), 'config', 'benchmark.yaml')
-
+    output_file_id_arg = DeclareLaunchArgument('output_file_id', default_value='mighty')
+    output_file_id = LaunchConfiguration('output_file_id')
 
     traj_benchmark_mighty_node = Node(
         package='mighty',
@@ -25,9 +26,12 @@ def generate_launch_description():
         namespace='NX01',
         # Toggle prefix by setting use_gdb:=true/false
         # prefix=gdb_prefix,
-        parameters=[parameters_path],
+        parameters=[parameters_path, {
+            'output_file_id': output_file_id
+        }],
     )
 
     return LaunchDescription([
-        traj_benchmark_mighty_node,
+        output_file_id_arg,
+        traj_benchmark_mighty_node
     ])

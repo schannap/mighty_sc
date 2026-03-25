@@ -15,14 +15,14 @@ from launch.events import Shutdown
 def generate_launch_description():
     # The path to the urdf file
     urdf_path=PathJoinSubstitution([FindPackageShare('mighty'), 'urdf', 'quadrotor.urdf.xacro'])
-    parameters_path=os.path.join(get_package_share_directory('mighty'), 'config', 'mighty.yaml')
+    parameters_path=os.path.join(get_package_share_directory('mighty'), 'config', 'benchmark.yaml')
 
     # Get the dict of parameters from the yaml file
     with open(parameters_path, 'r') as file:
         parameters = yaml.safe_load(file)
 
     # Extract specific node parameters
-    parameters = parameters['mighty_node']['ros__parameters']
+    # parameters = parameters['mighty_node']['ros__parameters']
     
     # ========== Launch Arguments ==========
     traj_arg = DeclareLaunchArgument(
@@ -32,11 +32,17 @@ def generate_launch_description():
 
     env_arg = DeclareLaunchArgument(
         'env',
-        default_value='hard_forest'
+        default_value='big_obstacle'
     )
+
+    file_identifier_arg = DeclareLaunchArgument(
+        'file_identifier',
+        default_value='test'
+    )   
 
     trajectory_csv_path = LaunchConfiguration('trajectory_csv_path')
     env = LaunchConfiguration('env')
+    file_identifier = LaunchConfiguration('file_identifier')
 
     # ========== Include Base (Gazebo + RViz + Dyn Obstacles) ==========
     base_launch = IncludeLaunchDescription(
@@ -71,23 +77,23 @@ def generate_launch_description():
             'pose_topic': 'state',
             'odom_topic': 'odometry/filtered_no',
             'goal_topic': '/move_base_simple/goal',
-            'world_dimensions':'[30.0, 30.0, 10.0]'
+            'world_dimensions':'[60.0, 30.0, 10.0]'
         }.items()
     )
 
-    mighty_node = Node(
-                package='mighty',
-                executable='mighty',
-                name='mighty_node',
-                namespace='NX01',
-                output='screen',
-                emulate_tty=True,
-                parameters=[parameters],
-                remappings=[('lidar_cloud_in', 'mid360_PointCloud2'),
-                            ('depth_camera_cloud_in', 'd435/depth/color/points')],
-                # prefix='xterm -e gdb -q -ex run --args', # gdb debugging
-                # arguments=['--ros-args', '--log-level', 'error']
-    )
+    # mighty_node = Node(
+    #             package='mighty',
+    #             executable='mighty',
+    #             name='mighty_node',
+    #             namespace='NX01',
+    #             output='screen',
+    #             emulate_tty=True,
+    #             parameters=[parameters],
+    #             remappings=[('lidar_cloud_in', 'mid360_PointCloud2'),
+    #                         ('depth_camera_cloud_in', 'd435/depth/color/points')],
+    #             # prefix='xterm -e gdb -q -ex run --args', # gdb debugging
+    #             # arguments=['--ros-args', '--log-level', 'error']
+    # )
 
     # ========== Include Onboard ==========
     onboard_launch = IncludeLaunchDescription(
@@ -99,11 +105,14 @@ def generate_launch_description():
             ])
         ),
         launch_arguments={
-            'x': '0.0',
+            'x': '11.0',
             'y': '0.0',
             'z': '1.0',
             'yaw': '1.57',
             'use_hardware': 'false',
+            'initial_wdx':'60.0',
+            'initial_wdy':'30.0',
+            'initial_wdz':'10.0'
         }.items()
     )
 
@@ -114,11 +123,12 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'trajectory_csv_path': trajectory_csv_path,
-            'initial_wdx':'30.0',
+            'initial_wdx':'60.0',
             'initial_wdy':'30.0', 
-            'min_wdx':'30.0',
+            'min_wdx':'60.0',
             'min_wdy':'30.0',
-            'min_wdz':'3.0'
+            'min_wdz':'3.0',
+            'file_identifier': ParameterValue(file_identifier, value_type=str)
         }]
     )
 
@@ -150,6 +160,7 @@ def generate_launch_description():
     return LaunchDescription([
         traj_arg,
         env_arg,
+        file_identifier_arg,
         base_launch,
         delayed_mapper, #mapper_launch,
         delayed_onboard, #onboard_launch,
