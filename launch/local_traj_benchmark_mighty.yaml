@@ -10,18 +10,18 @@ windows:
       # base station
       - shell_command:
         - source /usr/share/gazebo/setup.bash
-        - ros2 launch mighty base_mighty.launch.py use_dyn_obs:=false use_gazebo_gui:=false use_rviz:=true env:=hard_forest
+        - ros2 launch mighty base_mighty.launch.py use_dyn_obs:=false use_gazebo_gui:=false use_rviz:=true env:=big_obstacle #env:=hard_forest
      
       # ACL mapper
       - shell_command:
         - sleep 10
-        - ros2 launch global_mapper_ros global_mapper_node.launch.py world_dimensions:="[30.0, 30.0, 10.0]"
+        - ros2 launch global_mapper_ros global_mapper_node.launch.py world_dimensions:="[60.0, 30.0, 10.0]"
 
       # onboard agent NX01
       - shell_command:
         - sleep 10
-        - ros2 launch mighty onboard_mighty.launch.py x:=0.0 y:=0.0 z:=1.0 yaw:=1.57 initial_wdx:=30.0 initial_wdy:=30.0 initial_wdz:=10.0
+        - ros2 launch mighty onboard_mighty.launch.py x:=11.0 y:=0.0 z:=1.0 yaw:=1.57 initial_wdx:=60.0 initial_wdy:=30.0 initial_wdz:=10.0
 
       - shell_command:
         - sleep 20
-        - ros2 launch mighty local_traj_benchmark_mighty.launch.py
+        - ros2 launch mighty local_traj_benchmark_mighty.launch.py output_file_id:=test_endpoint18 #jerk_weight:=0.001 occ_weight:=-10000.0

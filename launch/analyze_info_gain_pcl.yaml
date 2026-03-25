@@ -1,4 +1,4 @@
-session_name: trajectory_overlay
+session_name: info_gain_analysis
 windows:
   - window_name: main
     layout: tiled
@@ -10,20 +10,20 @@ windows:
       # base station
       - shell_command:
         - source /usr/share/gazebo/setup.bash
-        - ros2 launch mighty base_mighty.launch.py use_dyn_obs:=false use_gazebo_gui:=false use_rviz:=true env:=hard_forest
+        - ros2 launch mighty base_mighty.launch.py use_dyn_obs:=false use_gazebo_gui:=false use_rviz:=true env:=big_obstacle # env:=hard_forest
      
       # ACL mapper
       - shell_command:
         - sleep 10
-        - ros2 launch global_mapper_ros global_mapper_node.launch.py world_dimensions:="[30.0, 30.0, 10.0]"
+        - ros2 launch global_mapper_ros global_mapper_node.launch.py world_dimensions:="[60.0, 30.0, 10.0]"
         
       # onboard agent NX01
       - shell_command:
         - sleep 10
-        - ros2 launch mighty onboard_mighty.launch.py x:=0.0 y:=0.0 z:=1.0 yaw:=1.57 initial_wdx:=30.0 initial_wdy:=30.0 initial_wdz:=10.0
+        - ros2 launch mighty onboard_mighty.launch.py x:=11.0 y:=0.0 z:=1.0 yaw:=1.57 initial_wdx:=60.0 initial_wdy:=30.0 initial_wdz:=10.0
       
       - shell_command:
         - sleep 20
-        # - ros2 launch mighty analyze_info_gain.launch.py traj_directory:=src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5 initial_wdx:=30.0 initial_wdy:=30.0 min_wdx:=30.0 min_wdy:=30.0 min_wdz:=3.0 trajectory_csv_path:=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5with_occ_/traj_mighty_N5__sfc_g000.mysco2.csv
-        # - ros2 launch mighty analyze_info_gain_pcl.launch.py traj_directory:=src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5 initial_wdx:=30.0 initial_wdy:=30.0 min_wdx:=30.0 min_wdy:=30.0 min_wdz:=3.0 trajectory_csv_path:=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5/traj_mighty_N5__sfc_g000.mysco2.csv
-        - ros2 launch mighty analyze_info_gain_pcl.launch.py initial_wdx:=30.0 initial_wdy:=30.0 min_wdx:=30.0 min_wdy:=30.0 min_wdz:=3.0 trajectory_csv_path:=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5/traj_mighty_N5__sfc_g000.mysco2.csv
+      #   # - ros2 launch mighty analyze_info_gain.launch.py traj_directory:=src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5 initial_wdx:=30.0 initial_wdy:=30.0 min_wdx:=30.0 min_wdy:=30.0 min_wdz:=3.0 trajectory_csv_path:=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5with_occ_/traj_mighty_N5__sfc_g000.mysco2.csv
+      #   # - ros2 launch mighty analyze_info_gain_pcl.launch.py traj_directory:=src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5 initial_wdx:=30.0 initial_wdy:=30.0 min_wdx:=30.0 min_wdy:=30.0 min_wdz:=3.0 trajectory_csv_path:=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5/traj_mighty_N5__sfc_g000.mysco2.csv
+        - ros2 launch mighty analyze_info_gain_pcl.launch.py traj_path:=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/test_endpoint_18_nominal_mini/traj_mighty_N5__sfc_g015.mysco2.csv file_identifier:=temp_test
