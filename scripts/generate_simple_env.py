@@ -5,6 +5,10 @@ from geometry_msgs.msg import Pose
 from gazebo_msgs.srv import SpawnEntity
 
 class WallSpawner(Node):
+    """
+    Spawns an open box with an inner wall in Gazebo using the SpawnEntity service.
+    The box is defined by 3 walls (bottom, top, right) and an inner wall that creates a narrow passage.
+    """
     def __init__(self):
         super().__init__('generate_open_box')
 
@@ -19,13 +23,13 @@ class WallSpawner(Node):
         # Outer box
         x_min = 2.0
         x_max = 20.0
-        y_min = -10.0
-        y_max = 10.0
+        y_min = -4.0
+        y_max = 4.0
 
         # Inner wall
         inner_x = 7.0
-        inner_y_min = -3.0
-        inner_y_max = 3.0
+        inner_y_min = -2.0
+        inner_y_max = 2.0
 
         # Wall properties
         wall_thickness = 0.5

@@ -1151,7 +1151,7 @@ private:
                 }
                 const fs::path out_dir = fs::path(traj_dump_run_dir_);
                 std::cout << "Trajectories dumped to directory: " << out_dir.string();
-                rclcpp::shutdown();
+                // rclcpp::shutdown();
                 return;
 
             }

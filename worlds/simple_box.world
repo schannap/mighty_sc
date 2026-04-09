@@ -8,7 +8,6 @@
       </ros>
       <update_rate>100.0</update_rate>
     </plugin>
-    
     <light name='sun' type='directional'>
       <cast_shadows>1</cast_shadows>
       <pose>0 0 10 0 -0 0</pose>
@@ -132,7 +131,7 @@
         <enable_wind>0</enable_wind>
         <kinematic>0</kinematic>
       </link>
-      <pose>11 -10 2.5 0 -0 0</pose>
+      <pose>11 -4 2.5 0 -0 0</pose>
     </model>
     <model name='wall_top'>
       <static>1</static>
@@ -168,7 +167,7 @@
         <enable_wind>0</enable_wind>
         <kinematic>0</kinematic>
       </link>
-      <pose>11 10 2.5 0 -0 0</pose>
+      <pose>11 4 2.5 0 -0 0</pose>
     </model>
     <model name='wall_right'>
       <static>1</static>
@@ -176,7 +175,7 @@
         <collision name='collision'>
           <geometry>
             <box>
-              <size>20 0.5 5</size>
+              <size>8 0.5 5</size>
             </box>
           </geometry>
           <max_contacts>10</max_contacts>
@@ -196,7 +195,7 @@
         <visual name='visual'>
           <geometry>
             <box>
-              <size>20 0.5 5</size>
+              <size>8 0.5 5</size>
             </box>
           </geometry>
         </visual>
@@ -212,7 +211,7 @@
         <collision name='collision'>
           <geometry>
             <box>
-              <size>6 0.5 5</size>
+              <size>4 0.5 5</size>
             </box>
           </geometry>
           <max_contacts>10</max_contacts>
@@ -232,7 +231,7 @@
         <visual name='visual'>
           <geometry>
             <box>
-              <size>6 0.5 5</size>
+              <size>4 0.5 5</size>
             </box>
           </geometry>
         </visual>
@@ -243,10 +242,10 @@
       <pose>7 0 2.5 0 -0 1.5708</pose>
     </model>
     <state world_name='default'>
-      <sim_time>133 295000000</sim_time>
-      <real_time>133 640024229</real_time>
-      <wall_time>1774409266 354096323</wall_time>
-      <iterations>133295</iterations>
+      <sim_time>1257 491000000</sim_time>
+      <real_time>1259 733636289</real_time>
+      <wall_time>1774623379 731141103</wall_time>
+      <iterations>1257491</iterations>
       <model name='ground_plane'>
         <pose>0 0 0 0 -0 0</pose>
         <scale>1 1 1</scale>
@@ -258,10 +257,10 @@
         </link>
       </model>
       <model name='wall_bottom'>
-        <pose>11 -10 2.5 0 -0 0</pose>
+        <pose>11 -4 2.5 0 -0 0</pose>
         <scale>1 1 1</scale>
         <link name='link'>
-          <pose>11 -10 2.5 0 -0 0</pose>
+          <pose>11 -4 2.5 0 -0 0</pose>
           <velocity>0 0 0 0 -0 0</velocity>
           <acceleration>0 0 0 0 -0 0</acceleration>
           <wrench>0 0 0 0 -0 0</wrench>
@@ -288,10 +287,10 @@
         </link>
       </model>
       <model name='wall_top'>
-        <pose>11 10 2.5 0 -0 0</pose>
+        <pose>11 4 2.5 0 -0 0</pose>
         <scale>1 1 1</scale>
         <link name='link'>
-          <pose>11 10 2.5 0 -0 0</pose>
+          <pose>11 4 2.5 0 -0 0</pose>
           <velocity>0 0 0 0 -0 0</velocity>
           <acceleration>0 0 0 0 -0 0</acceleration>
           <wrench>0 0 0 0 -0 0</wrench>
@@ -303,7 +302,7 @@
     </state>
     <gui fullscreen='0'>
       <camera name='user_camera'>
-        <pose>23.5029 -34.2574 61.036 0 0.975644 1.5522</pose>
+        <pose>-28.2884 2.13956 24.5838 0 0.395643 -0.187805</pose>
         <view_controller>orbit</view_controller>
         <projection_type>perspective</projection_type>
       </camera>

@@ -20,9 +20,9 @@ def generate_launch_description():
     # Get the dict of parameters from the yaml file
     with open(parameters_path, 'r') as file:
         parameters = yaml.safe_load(file)
-
+    
     # Extract specific node parameters
-    # parameters = parameters['mighty_node']['ros__parameters']
+    parameters = parameters['benchmark_mighty']['ros__parameters']
     
     # ========== Launch Arguments ==========
     traj_arg = DeclareLaunchArgument(
@@ -62,6 +62,7 @@ def generate_launch_description():
     )
 
     # ========== Include Mapper ==========
+    world_dim = f"[{parameters['initial_wdx']}, {parameters['initial_wdy']}, {parameters['initial_wdz']}]"
     mapper_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([
@@ -77,23 +78,9 @@ def generate_launch_description():
             'pose_topic': 'state',
             'odom_topic': 'odometry/filtered_no',
             'goal_topic': '/move_base_simple/goal',
-            'world_dimensions':'[60.0, 30.0, 10.0]'
+            'world_dimensions':world_dim
         }.items()
     )
-
-    # mighty_node = Node(
-    #             package='mighty',
-    #             executable='mighty',
-    #             name='mighty_node',
-    #             namespace='NX01',
-    #             output='screen',
-    #             emulate_tty=True,
-    #             parameters=[parameters],
-    #             remappings=[('lidar_cloud_in', 'mid360_PointCloud2'),
-    #                         ('depth_camera_cloud_in', 'd435/depth/color/points')],
-    #             # prefix='xterm -e gdb -q -ex run --args', # gdb debugging
-    #             # arguments=['--ros-args', '--log-level', 'error']
-    # )
 
     # ========== Include Onboard ==========
     onboard_launch = IncludeLaunchDescription(
@@ -101,18 +88,14 @@ def generate_launch_description():
             PathJoinSubstitution([
                 FindPackageShare('mighty'),
                 'launch',
-                'onboard_mighty.launch.py'
+                'onboard_mighty_benchmark.launch.py'
             ])
         ),
         launch_arguments={
             'x': '11.0',
             'y': '0.0',
             'z': '1.0',
-            'yaw': '1.57',
-            'use_hardware': 'false',
-            'initial_wdx':'60.0',
-            'initial_wdy':'30.0',
-            'initial_wdz':'10.0'
+            'yaw': '1.57'
         }.items()
     )
 
@@ -121,13 +104,8 @@ def generate_launch_description():
         package='mighty',
         executable='occlusion_analysis_pcl',
         output='screen',
-        parameters=[{
+        parameters=[parameters_path, {
             'trajectory_csv_path': trajectory_csv_path,
-            'initial_wdx':'60.0',
-            'initial_wdy':'30.0', 
-            'min_wdx':'60.0',
-            'min_wdy':'30.0',
-            'min_wdz':'3.0',
             'file_identifier': ParameterValue(file_identifier, value_type=str)
         }]
     )
@@ -164,7 +142,6 @@ def generate_launch_description():
         base_launch,
         delayed_mapper, #mapper_launch,
         delayed_onboard, #onboard_launch,
-        # mighty_node
         delayed_analyzer,
         shutdown_on_exit
     ])

@@ -6,7 +6,7 @@ Run Gazebo first:
 Then:
   ros2 run mighty generate_random_forest.py --ros-args -p difficulty:=hard -p min_clearance:=2.0 -p shape_mode:=mixed -p box_probability:=0.5
 
-Add this to .world for ROS2 bridge:
+Add this to .world for ROS2 bridge: Inside world_name
   <plugin name='gazebo_ros_state' filename='libgazebo_ros_state.so'>
     <ros>
       <namespace>/plug</namespace>

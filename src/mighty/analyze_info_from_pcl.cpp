@@ -137,11 +137,11 @@ public:
 
         //Declare a parameter for benchmarking x min, x max, y min, y max
         //Declare a parameter for whether benchmarking limits should be used
-        declare_parameter<bool>("use_benchmarking_limits", true);
-        declare_parameter<double>("benchmark_x_min", 13.0);
-        declare_parameter<double>("benchmark_x_max", 20.0);
-        declare_parameter<double>("benchmark_y_min", -2.0);
-        declare_parameter<double>("benchmark_y_max", 5.0);
+        // declare_parameter<bool>("use_benchmarking_limits", true);
+        // declare_parameter<double>("benchmark_x_min", 13.0);
+        // declare_parameter<double>("benchmark_x_max", 20.0);
+        // declare_parameter<double>("benchmark_y_min", -2.0);
+        // declare_parameter<double>("benchmark_y_max", 5.0);
 
         declare_parameter<std::string>("planner_name", "mighty");
         declare_parameter<bool>("use_single_threaded", false);
@@ -202,27 +202,27 @@ public:
                       std::placeholders::_2));
 
 
-        get_parameter("use_benchmarking_limits", use_benchmarking_limits_);
+        // get_parameter("use_benchmarking_limits", use_benchmarking_limits_);
 
-        get_parameter("benchmark_x_min", benchmark_x_min_);
-        get_parameter("benchmark_x_max", benchmark_x_max_);
-        get_parameter("benchmark_y_min", benchmark_y_min_);
-        get_parameter("benchmark_y_max", benchmark_y_max_);
+        // get_parameter("benchmark_x_min", benchmark_x_min_);
+        // get_parameter("benchmark_x_max", benchmark_x_max_);
+        // get_parameter("benchmark_y_min", benchmark_y_min_);
+        // get_parameter("benchmark_y_max", benchmark_y_max_);
 
 
     }
 
 private:
-    inline bool inBenchmarkRegion(const Vec3f& pt) const
-    {
-        if (!use_benchmarking_limits_)
-            return true;
+    // inline bool inBenchmarkRegion(const Vec3f& pt) const
+    // {
+    //     if (!use_benchmarking_limits_)
+    //         return true;
 
-        return (pt.x() >= benchmark_x_min_ &&
-                pt.x() <= benchmark_x_max_ &&
-                pt.y() >= benchmark_y_min_ &&
-                pt.y() <= benchmark_y_max_);
-    }
+    //     return (pt.x() >= benchmark_x_min_ &&
+    //             pt.x() <= benchmark_x_max_ &&
+    //             pt.y() >= benchmark_y_min_ &&
+    //             pt.y() <= benchmark_y_max_);
+    // }
 
     // ===============================
     // CSV LOADING
@@ -359,8 +359,8 @@ private:
 
                 Vec3f p(pt.x, pt.y, pt.z);
 
-                if (!inBenchmarkRegion(p))
-                    continue;
+                // if (!inBenchmarkRegion(p))
+                //     continue;
 
                 GlobalVoxel gv = worldToGlobalVoxel(p);
 
@@ -430,8 +430,8 @@ private:
 
             Vec3f p(pt.x, pt.y, pt.z);
 
-            if (!inBenchmarkRegion(p))
-                continue;
+            // if (!inBenchmarkRegion(p))
+            //     continue;
 
             GlobalVoxel gv = worldToGlobalVoxel(p);
 
@@ -537,9 +537,9 @@ private:
     std::unordered_set<GlobalVoxel, GlobalVoxelHash> remaining_unknown_;
     std::unordered_set<GlobalVoxel, GlobalVoxelHash> converted_;
 
-    bool use_benchmarking_limits_;
-    double benchmark_x_min_, benchmark_x_max_;
-    double benchmark_y_min_, benchmark_y_max_;
+    // bool use_benchmarking_limits_;
+    // double benchmark_x_min_, benchmark_x_max_;
+    // double benchmark_y_min_, benchmark_y_max_;
 
 };
 

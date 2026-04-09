@@ -3,12 +3,14 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch.conditions import IfCondition
-
+import os
 from launch.actions import ExecuteProcess
 from launch_ros.parameter_descriptions import ParameterValue
+from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
+    parameters_path=os.path.join(get_package_share_directory('mighty'), 'config', 'benchmark.yaml')
 
     traj_path_arg = DeclareLaunchArgument(
         'traj_path',
@@ -33,15 +35,10 @@ def generate_launch_description():
     occlusion_analysis_pcl_node = Node(
         package='mighty',
         executable='occlusion_analysis_pcl',
-        name='occlusion_analysis_pcl_node',
+        name='benchmark_mighty',
         output='screen',
-        parameters=[{
+        parameters=[parameters_path, {
             'trajectory_csv_path': traj_path,
-            'initial_wdx':'60.0',
-            'initial_wdy':'30.0', 
-            'min_wdx':'60.0',
-            'min_wdy':'30.0',
-            'min_wdz':'3.0',
             'file_identifier': ParameterValue(file_identifier, value_type=str)
         }]
     )

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # TRAJ_DIR=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5
-TRAJ_DIR=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/test_endpoint_18_mini
+TRAJ_DIR=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/test_simple_box
 
 source /home/kkondo/code/mighty_ws/install/setup.bash
 source /home/kkondo/code/decomp_ws/install/setup.bash
@@ -40,7 +40,7 @@ for traj in ${TRAJ_DIR}/*.csv; do
 
     ros2 launch mighty automate_info_gain_pcl.launch.py \
         trajectory_csv_path:="$traj" \
-        file_identifier:=18_filtered_vis/$(basename "$traj" .csv)
+        file_identifier:=test_vis/$(basename "$traj" .csv)
 
     echo "Finished $traj"
     sleep 5

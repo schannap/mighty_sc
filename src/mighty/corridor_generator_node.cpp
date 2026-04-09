@@ -199,6 +199,8 @@ public:
         declare_parameter<std::string>("map_topic", "/NX01/occupancy_grid");
         declare_parameter<std::vector<double>>("start", {0.0, 0.0, 3.0});
         declare_parameter<double>("goal_x", 8.0);
+        declare_parameter<double>("goal_y_min", -1.0);
+        declare_parameter<double>("goal_y_max", 5.0);
 
         // Map window to read into VoxelMapUtil (make this cover all your goals for fairness)
         declare_parameter<std::vector<double>>("map_center", {0.0, 0.0, 1.0});
@@ -217,7 +219,7 @@ public:
         declare_parameter<int>("dgp_timeout_duration_ms", 100000);
 
         // Corridor generation / inflation params
-        declare_parameter<double>("res", 0.15);
+        declare_parameter<double>("mighty_map_res", 0.15);
         declare_parameter<double>("factor_dgp", 1.0);
         declare_parameter<double>("inflation_dgp", 0.45);
         declare_parameter<double>("drone_radius", 0.1);
@@ -226,13 +228,20 @@ public:
         declare_parameter<double>("v_max", 2.0);
         declare_parameter<double>("a_max", 3.0);
         declare_parameter<double>("j_max", 10.0);
-
+        declare_parameter<bool>("use_free_start", true);
+        declare_parameter<double>("free_start_factor", 1.0);
+        declare_parameter<bool>("use_free_goal", false);
+        declare_parameter<double>("free_goal_factor", 2.0);
+        declare_parameter<int>("num_N", 5);
+        declare_parameter<double>("w_unknown", 0.0);
+        declare_parameter<double>("w_align", 0.0);
+        declare_parameter<double>("decay_len_cells", 100.0);
+        declare_parameter<double>("w_side", 0.0);
         // Decomp tuning
         declare_parameter<std::vector<double>>("local_box_size", {4.0, 4.0, 3.0});
         declare_parameter<bool>("use_shrinked_box", false);
         declare_parameter<double>("shrinked_box_size", 0.2);
         declare_parameter<double>("max_dist_vertexes", 10.0);
-
         // Map bounds for VoxelMapUtil ctor
         declare_parameter<double>("x_min", -100.0);
         declare_parameter<double>("x_max", 100.0);
@@ -254,12 +263,15 @@ public:
         map_topic_ = get_parameter("map_topic").as_string();
         output_dir_ = get_parameter("output_dir").as_string();
         output_prefix_ = get_parameter("output_prefix").as_string();
-        double goal_x_ = get_parameter("goal_x").as_double();
+        goal_x_ = get_parameter("goal_x").as_double();
         start_ = vec3FromStd(get_parameter("start").as_double_array(), "start");
+        goal_y_max_ = get_parameter("goal_y_max").as_double();
+        goal_y_min_ = get_parameter("goal_y_min").as_double();
         goals_.clear();
-        for (double y = -1.0; y <= 5.0 + 1e-3; y += 0.1)
+
+        for (double y = goal_y_min_; y <= goal_y_max_ + 1e-3; y += 0.1)
         {
-            goals_.emplace_back(goal_x_, y, start_[2]); // changes x from 4.0 to 8.0
+            goals_.emplace_back(goal_x_, y, start_[2]); 
         }
         if (goals_.empty())
         {
@@ -274,7 +286,7 @@ public:
         corridor_nominal_speed_ = get_parameter("corridor_nominal_speed").as_double();
 
         // Fill the subset of `parameters` that DGPManager and cvxEllipsoidDecomp use.
-        par_.res = get_parameter("res").as_double();
+        par_.res = get_parameter("mighty_map_res").as_double();
         par_.factor_dgp = get_parameter("factor_dgp").as_double();
         par_.inflation_dgp = get_parameter("inflation_dgp").as_double();
         par_.drone_radius = get_parameter("drone_radius").as_double();
@@ -292,6 +304,23 @@ public:
         par_.z_min = get_parameter("z_min").as_double();
         par_.z_max = get_parameter("z_max").as_double();
 
+        par_.global_planner = get_parameter("global_planner").as_string();
+        par_.global_planner_verbose = get_parameter("global_planner_verbose").as_bool();
+        par_.global_planner_huristic_weight = get_parameter("global_planner_huristic_weight").as_double();
+        par_.dgp_timeout_duration_ms = get_parameter("dgp_timeout_duration_ms").as_int();  
+        par_.use_free_start = get_parameter("use_free_start").as_bool();
+        par_.free_start_factor = get_parameter("free_start_factor").as_double();
+        par_.use_free_goal = get_parameter("use_free_goal").as_bool();
+        par_.free_goal_factor = get_parameter("free_goal_factor").as_double();
+        par_.num_N = get_parameter("num_N").as_int();
+        par_.max_dist_vertexes = get_parameter("max_dist_vertexes").as_double();
+        par_.w_unknown = get_parameter("w_unknown").as_double();
+        par_.w_align = get_parameter("w_align").as_double();
+        par_.decay_len_cells = get_parameter("decay_len_cells").as_double();
+        par_.w_side = get_parameter("w_side").as_double();
+        // Init DGPManager with parameters
+        dgp_.setParameters(par_);
+
         global_planner_ = get_parameter("global_planner").as_string();
         global_planner_verbose_ = get_parameter("global_planner_verbose").as_bool();
         weight_ = get_parameter("global_planner_huristic_weight").as_double();
@@ -301,41 +330,6 @@ public:
         a_max_ = get_parameter("a_max").as_double();
         j_max_ = get_parameter("j_max").as_double();
 
-        // Init DGPManager with parameters
-        dgp_.setParameters(par_);
-
-
-        // static const rmw_qos_profile_t rmw_qos_profile_sensor_data =
-        // {
-        // RMW_QOS_POLICY_HISTORY_KEEP_LAST,
-        // 5,
-        // RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
-        // RMW_QOS_POLICY_DURABILITY_VOLATILE,
-        // RMW_QOS_DEADLINE_DEFAULT,
-        // RMW_QOS_LIFESPAN_DEFAULT,
-        // RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT,
-        // RMW_QOS_LIVELINESS_LEASE_DURATION_DEFAULT,
-        // false
-        // };
-        
-        // rclcpp::CallbackGroup::SharedPtr cb_group_map_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-        // rclcpp::SubscriptionOptions options_map;
-        // options_map.callback_group = cb_group_map_;
-
-        // // Synchronize the occupancy grid and unknown grid
-        // occup_grid_sub_.subscribe(this, "/NX01/occupancy_grid", rmw_qos_profile_sensor_data, options_map);
-        // unknown_grid_sub_.subscribe(this, "/NX01/unknown_grid", rmw_qos_profile_sensor_data, options_map);
-        // sync_.reset(new Sync(MySyncPolicy(10), occup_grid_sub_, unknown_grid_sub_));
-        // sync_->registerCallback(std::bind(&CorridorGeneratorNode::mapCallback, this, std::placeholders::_1, std::placeholders::_2));
-
-        
-        // occup_grid_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-        //     map_topic_,
-        //     rclcpp::SensorDataQoS(),
-        //     std::bind(&CorridorGeneratorNode:singleMapCallback,
-        //             this,
-        //             std::placeholders::_1),
-        //     options_map);
 
         // Subscribe to point cloud
         rclcpp::QoS qos(1);
@@ -371,6 +365,9 @@ public:
                 std::bind(&CorridorGeneratorNode::republishCachedMsgs, this));
         }
 
+        // Confirm that the config file is being read
+        RCLCPP_INFO(get_logger(), "map resolution is %.3f", par_.res);
+
         // RCLCPP_INFO(get_logger(),
         //             "CorridorGeneratorNode up. Waiting for point cloud on [%s].", map_topic_.c_str());
     }
@@ -391,30 +388,6 @@ private:
         // Dynamic obstacles: pass empty here unless you explicitly want inflation-in-map-update.
         vec_Vecf<3> obst_pos_empty;
         const double traj_max_time = 0.0;
-        // for (const auto & field : msg->fields) {
-        //     RCLCPP_INFO(
-        //     get_logger(),
-        //     "width=%u height=%u point_step=%u row_step=%u data.size=%zu",
-        //     msg->width,
-        //     msg->height,
-        //     msg->point_step,
-        //     msg->row_step,
-        //     msg->data.size()
-        //     );
-        // }
-
-
-        // if (!cloud || cloud->points.empty()){
-        //     if (cloud->points.empty()){
-        //         RCLCPP_WARN(get_logger(), "POINTS EMPTY");
-        //     }
-        //     else{
-        //         RCLCPP_WARN(get_logger(), "CLOUD IS EMPTY");
-        //     }
-        // }
-        // else{
-        //     RCLCPP_WARN(get_logger(), "POINTS FULL");
-        // }
 
         dgp_.updateMap(wdx_, wdy_, wdz_, map_center_, cloud);//, obst_pos_empty, traj_max_time);
 
@@ -422,136 +395,7 @@ private:
         dgp_.updateVecOccupied(pclToVec3f(*cloud));
         // RCLCPP_WARN(get_logger(), "updated the occupied vec mapCb");
     }
-    // void mapCb(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
-    // {
-    //     auto cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-    //     cloud->reserve(msg->width * msg->height);
-
-    //     sensor_msgs::PointCloud2ConstIterator<float> it_x(*msg, "x");
-    //     sensor_msgs::PointCloud2ConstIterator<float> it_y(*msg, "y");
-    //     sensor_msgs::PointCloud2ConstIterator<float> it_z(*msg, "z");
-
-    //     for (; it_x != it_x.end(); ++it_x, ++it_y, ++it_z)
-    //     {
-    //         pcl::PointXYZ p;
-    //         p.x = *it_x;
-    //         p.y = *it_y;
-    //         p.z = *it_z;
-    //         cloud->points.push_back(p);
-    //     }
-
-    //     cloud->width  = cloud->points.size();
-    //     cloud->height = 1;
-    //     cloud->is_dense = false;
-
-    //     if (cloud->points.empty()) {
-    //         RCLCPP_ERROR(get_logger(),
-    //             "Extracted PointXYZ cloud is empty — this should not happen");
-    //         return;
-    //     }
-
-    //     {
-    //         std::lock_guard<std::mutex> lk(mtx_);
-    //         last_cloud_ = cloud;
-    //         map_received_ = true;
-    //     }
-
-    //     dgp_.updateMap(wdx_, wdy_, wdz_, map_center_, cloud);//, obst_pos_empty, traj_max_time);
-
-    //     // Also store occupied vector for decomp obstacle set
-    //     dgp_.updateVecOccupied(pclToVec3f(*cloud));
-    //     // RCLCPP_WARN(get_logger(), "updated the occupied vec mapCb");
-    // }
-
-
-    void singleMapCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
-    {
-        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
-        pcl::fromROSMsg(*msg, *cloud);
-
-        {
-            std::lock_guard<std::mutex> lk(mtx_);
-            last_cloud_ = cloud;
-            map_received_ = true;
-        }
-
-        // Update DGP voxel map with a fixed window for fairness
-        // Dynamic obstacles: pass empty here unless you explicitly want inflation-in-map-update.
-        vec_Vecf<3> obst_pos_empty;
-        const double traj_max_time = 0.0;
-
-        dgp_.updateMap(wdx_, wdy_, wdz_, map_center_, cloud);//, obst_pos_empty, traj_max_time);
-
-        // Also store occupied vector for decomp obstacle set
-        dgp_.updateVecOccupied(pclToVec3f(*cloud));
-        RCLCPP_WARN(get_logger(), "updated the occupied vec");
-
-    }
-
-    void mapCallback(
-        const sensor_msgs::msg::PointCloud2::ConstPtr &pclptr_map,
-        const sensor_msgs::msg::PointCloud2::ConstPtr &pclptr_unk)
-    {
-        pcl::PointCloud<pcl::PointXYZ>::Ptr map_cloud(new pcl::PointCloud<pcl::PointXYZ>());
-        pcl::PointCloud<pcl::PointXYZ>::Ptr unk_cloud(new pcl::PointCloud<pcl::PointXYZ>());
-        // "unkpack" both the clouds
-        pcl::fromROSMsg(*pclptr_map, *map_cloud);
-        pcl::fromROSMsg(*pclptr_unk, *unk_cloud);
-
-        // 1) Atomically store the incoming clouds
-        {
-            std::lock_guard<std::mutex> lk(mtx_kdtree_map_);
-            pclptr_map_ = map_cloud;
-        }
-        {
-            std::lock_guard<std::mutex> lk(mtx_kdtree_unk_);
-            pclptr_unk_ = unk_cloud;
-        }
-
-        // // Update the map size
-        // state local_state, local_G;
-        // getState(local_state);
-        // getG(local_G);
-        // computeMapSize(local_state.pos, local_G.pos);
-
-        // 2) map update (unlocked)
-        dgp_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_); // changed to add the unknown cloud
-        map_received_ = true;
-
-        // 3) Known‐space KD‐tree
-        if (pclptr_map_ && !pclptr_map_->points.empty())
-        {
-            std::lock_guard<std::mutex> lk(mtx_kdtree_map_);
-            kdtree_map_.setInputCloud(pclptr_map_);
-            kdtree_map_initialized_ = true;
-            dgp_.updateVecOccupied(pclptr_to_vec(pclptr_map_));
-            RCLCPP_INFO(this->get_logger(), "updated the occupied vec");
-        }
-        // else
-        // {
-        //     RCLCPP_WARN(
-        //         rclcpp::get_logger("mighty"),
-        //         "updateMap: member pclptr_map_ was null or empty; skipping KD‐tree update");
-        // }
-
-        // 4) Unknown‐space KD‐tree
-        if (pclptr_unk_ && !pclptr_unk_->points.empty())
-        {
-            std::lock_guard<std::mutex> lk(mtx_kdtree_unk_);
-            kdtree_unk_.setInputCloud(pclptr_unk_);
-            kdtree_unk_initialized_ = true;
-            // merge known into unknown vector
-            dgp_.updateVecUnknownOccupied(pclptr_to_vec(pclptr_unk_));
-            dgp_.insertVecOccupiedToVecUnknownOccupied();
-        }
-        // else
-        // {
-        //     RCLCPP_WARN(
-        //         rclcpp::get_logger("mighty"),
-        //         "updateMap: member pclptr_unk_ was null or empty; skipping KD‐tree update");
-        // }
-    }
-
+    
     void tick()
     {
         if (done_)
@@ -575,7 +419,8 @@ private:
             done_ = true;
             RCLCPP_INFO(get_logger(), "All corridors generated.");
 
-            timer_->cancel(); // stop calling tick()
+            done_ = true;
+            // timer_->cancel(); // stop calling tick()
 
             if (!keep_alive_)
             {
@@ -601,8 +446,8 @@ private:
 
         // Setup planner snapshot (locks current map_util_ into map_util_for_planning_)
         dgp_.setupDGPPlanner(
-            global_planner_,
-            global_planner_verbose_,
+            par_.global_planner,
+            par_.global_planner_verbose,
             par_.res,
             v_max_,
             a_max_,
@@ -617,10 +462,10 @@ private:
         if (base_uo.empty()){
             RCLCPP_WARN(get_logger(), "VEC OCC IS EMPTY");
         }
-        for (const auto& p : base_uo)
-        {
-            RCLCPP_INFO(this->get_logger(), "[%.3f %.3f %.3f]", p.x(), p.y(), p.z());
-        }
+        // for (const auto& p : base_uo)
+        // {
+        //     RCLCPP_INFO(this->get_logger(), "[%.3f %.3f %.3f]", p.x(), p.y(), p.z());
+        // }
 
         // If you want unknown+occupied corridors (gazebo case), you would instead do:
         // dgp_.getVecUnknownOccupied(base_uo);
@@ -782,9 +627,6 @@ private:
     std::string output_dir_;
     std::string output_prefix_;
 
-    Vec3f start_;
-    std::vector<Vec3f> goals_;
-
     Vec3f map_center_;
     double wdx_{200.0}, wdy_{200.0}, wdz_{10.0};
 
@@ -795,7 +637,7 @@ private:
     DGPManager dgp_;
 
     std::string global_planner_{"sjps"};
-    bool global_planner_verbose_{false};
+    bool global_planner_verbose_{true};
     double weight_{1.0};
     int dgp_timeout_ms_{1000};
 
@@ -837,7 +679,12 @@ private:
     typedef message_filters::Synchronizer<MySyncPolicy> Sync;
     std::shared_ptr<Sync> sync_;
 
-
+    // For setting up start and goal
+    Vec3f start_;
+    std::vector<Vec3f> goals_;
+    double goal_x_;
+    double goal_y_min_;
+    double goal_y_max_;
 
 };
 

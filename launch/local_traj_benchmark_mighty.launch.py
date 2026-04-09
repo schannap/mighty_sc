@@ -21,7 +21,7 @@ def generate_launch_description():
     traj_benchmark_mighty_node = Node(
         package='mighty',
         executable='local_traj_benchmark_mighty',
-        name='local_traj_benchmark_mighty',
+        name='benchmark_mighty',
         output='screen',
         namespace='NX01',
         # Toggle prefix by setting use_gdb:=true/false
