@@ -14,7 +14,7 @@ def generate_launch_description():
     # --args: pass remaining args as program args
     gdb_prefix = 'xterm -e gdb -q -ex run --args'
 
-    parameters_path=os.path.join(get_package_share_directory('mighty'), 'config', 'benchmark.yaml')
+    parameters_path=os.path.join(get_package_share_directory('mighty'), 'config', 'benchmark_ns.yaml')
     output_file_id_arg = DeclareLaunchArgument('output_file_id', default_value='mighty')
     output_file_id = LaunchConfiguration('output_file_id')
 

@@ -27,7 +27,7 @@ def generate_launch_description():
     visualizer_node = Node(
         package='mighty',
         executable='plot_comparisons',
-        name='plot_comparisons',
+        name='benchmark_mighty',
         arguments=[nominal_dir, modified_dir],
         output='screen'
     )

@@ -20,8 +20,21 @@ windows:
       # onboard agent NX01
       - shell_command:
         - sleep 10
-        - ros2 launch mighty onboard_mighty_benchmark.launch.py x:=2.0 y:=0.0 z:=1.0 yaw:=1.57
+        - ros2 launch mighty onboard_mighty_benchmark.launch.py x:=-2.0 y:=0.0 z:=1.0 yaw:=1.57
 
       - shell_command:
         - sleep 20
-        - ros2 launch mighty local_traj_benchmark_mighty.launch.py output_file_id:=test_simple_box
+        - |
+          ros2 topic pub /NX01/goal dynus_interfaces/msg/Goal "{
+            header: {stamp: {sec: 0, nanosec: 0}, frame_id: 'map'},
+            p: {x: 2.0, y: 0.0, z: 1.0},
+            v: {x: 0.5, y: 0.0, z: 0.0},
+            a: {x: 0.0, y: 0.0, z: 0.0},
+            j: {x: 0.0, y: 0.0, z: 0.0},
+            yaw: 0.0,
+            dyaw: 0.0
+          }"
+
+      - shell_command:
+        - sleep 30
+        - ros2 launch mighty local_traj_benchmark_mighty.launch.py output_file_id:=simple_boxv5_occ
