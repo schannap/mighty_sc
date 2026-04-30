@@ -33,7 +33,7 @@ class WallSpawner(Node):
 
         # Wall properties
         wall_thickness = 0.5
-        wall_height = 5.0
+        wall_height = 15.0
 
         # =========================
         # BUILD WALLS
