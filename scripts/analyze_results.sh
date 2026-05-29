@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # TRAJ_DIR=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/mighty_N5
-TRAJ_DIR=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/test_simple_box
+TRAJ_DIR=/home/kkondo/code/mighty_ws/src/mighty/benchmark_data/multi_thread/traj_dump/simple_boxv6
 
 source /home/kkondo/code/mighty_ws/install/setup.bash
 source /home/kkondo/code/decomp_ws/install/setup.bash
@@ -30,9 +30,21 @@ for traj in ${TRAJ_DIR}/*.csv; do
     # Convert to integer (handles leading zeros correctly)
     num=$((10#$num))
 
-    # Skip if > 50
-    if [ "$num" -gt 50 ]; then
-        echo "Skipping $base (index $num > 50)"
+    # Skip if < 25
+    if [ "$num" -lt 25 ]; then
+        echo "Skipping $base (index $num < 25)"
+        continue
+    fi
+
+    # Skip if > 45
+    if [ "$num" -gt 45 ]; then
+        echo "Skipping $base (index $num > 45)"
+        continue
+    fi
+
+    # Skip all odd trajectories
+    if [ $((num % 2)) -ne 0 ]; then
+        echo "Skipping $base (index $num is odd)"
         continue
     fi
 
@@ -40,7 +52,7 @@ for traj in ${TRAJ_DIR}/*.csv; do
 
     ros2 launch mighty automate_info_gain_pcl.launch.py \
         trajectory_csv_path:="$traj" \
-        file_identifier:=test_vis/$(basename "$traj" .csv)
+        file_identifier:=test_vis/nominal/$(basename "$traj" .csv)
 
     echo "Finished $traj"
     sleep 5

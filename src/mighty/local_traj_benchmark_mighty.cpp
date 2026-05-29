@@ -1648,6 +1648,7 @@ private:
         
         use_occ_cost_ = this->get_parameter("use_occ_cost").as_bool();
         RCLCPP_INFO(get_logger(), "useing occ cost %d", use_occ_cost_);
+        RCLCPP_WARN(this->get_logger(), "occ_weight = %.3f", par_.occ_weight);
         mighty_ptr_ = std::make_shared<MIGHTY>(par_);
         dgp_manager_.setParameters(par_);
     }

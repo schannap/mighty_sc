@@ -65,6 +65,8 @@ def generate_launch_description():
             'medium_forest': 'medium_forest.world',
             'hard_forest': 'hard_forest.world',
             'dynamic_forest': 'dynamic_forest.world',
+            'big_obstacle': 'big_obstacle.world',
+            'simple_box': 'simple_box.world',
         }
 
         # Choose the world file based on the provided environment.

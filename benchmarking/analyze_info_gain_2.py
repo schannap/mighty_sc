@@ -6,8 +6,8 @@ import numpy as np
 import matplotlib.ticker as ticker
 
 # Directories
-nominal_dir = '/home/intent/code/mighty_ws/src/mighty_sc/benchmark_data/csv_data'
-occlusion_dir = '/home/intent/code/mighty_ws/src/mighty_sc/benchmark_data/csv_data_occ'
+nominal_dir = '/home/intent/code/mighty_ws/src/mighty_sc/benchmark_data/18_nominal_vis'
+occlusion_dir = '/home/intent/code/mighty_ws/src/mighty_sc/benchmark_data/18_vis'
 
 
 # Regex to extract 3 consecutive digits
@@ -97,4 +97,16 @@ plt.fill_between(x,
 
 plt.axhline(0, linestyle='--')
 plt.tight_layout()
-plt.savefig("average_improvement.png", dpi=300)
+plt.savefig("average_improvement_18.png", dpi=300)
+
+all_improvements = np.array(all_improvements)
+
+max_idx = np.unravel_index(np.argmax(np.abs(all_improvements)), all_improvements.shape)
+max_diff = all_improvements[max_idx]
+
+print("Greatest difference:", max_diff)
+print("Trajectory index:", max_idx[0])
+print("Time index:", max_idx[1])
+
+max_improvement = np.max(all_improvements)
+print("Greatest improvement (Occlusion - Nominal):", max_improvement)

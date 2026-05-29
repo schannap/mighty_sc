@@ -26,7 +26,7 @@ def generate_launch_description():
     occlusion_analysis_node = Node(
         package='mighty',
         executable='occlusion_analysis',
-        name='occlusion_analysis_node',
+        name='benchmark_mighty',
         output='screen',
         parameters=[{
             'traj_directory': traj_directory

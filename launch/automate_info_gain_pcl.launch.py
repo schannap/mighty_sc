@@ -11,6 +11,7 @@ from ament_index_python.packages import get_package_share_directory
 import yaml
 from launch.actions import EmitEvent
 from launch.events import Shutdown
+from launch.actions import ExecuteProcess
 
 def generate_launch_description():
     # The path to the urdf file
@@ -110,18 +111,39 @@ def generate_launch_description():
         }]
     )
 
+    # publish a goal before analyzer starts to ensure the mapper has a goal to work with and generate the map
+    goal_pub = ExecuteProcess(
+        cmd=[
+            'ros2', 'topic', 'pub', '--once',
+            '/NX01/goal',
+            'dynus_interfaces/msg/Goal',
+            "{header: {frame_id: 'map'}, "
+            "p: {x: 2.0, y: 0.0, z: 1.0}, "
+            "v: {x: 0.5, y: 0.0, z: 0.0}, "
+            "a: {x: 0.0, y: 0.0, z: 0.0}, "
+            "j: {x: 0.0, y: 0.0, z: 0.0}, "
+            "yaw: 0.0, dyaw: 0.0}"
+        ],
+        output='screen'
+)
     # Delay the mapper and onboard mighty
     delayed_mapper = TimerAction(
-        period=20.0,
+        period=10.0,
         actions=[mapper_launch]
     )
     delayed_onboard = TimerAction(
-        period=20.0,
+        period=10.0,
         actions=[onboard_launch]
     )
+
+    delayed_goal = TimerAction(
+    period=15.0,
+    actions=[goal_pub]
+    )
+
     # Delay analyzer start (important)
     delayed_analyzer = TimerAction(
-        period=40.0,   # adjust as needed
+        period=25.0,   # adjust as needed
         actions=[analyzer_node]
     )
 
@@ -142,6 +164,7 @@ def generate_launch_description():
         base_launch,
         delayed_mapper, #mapper_launch,
         delayed_onboard, #onboard_launch,
+        delayed_goal,
         delayed_analyzer,
         shutdown_on_exit
     ])
